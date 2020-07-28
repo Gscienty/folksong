@@ -16,12 +16,13 @@ ssize_t fs_file_read(fs_file_t *file, fs_buf_t *buf, size_t size, off_t off) {
 
     file->off = off;
 
-    ssize_t n = read(file->fd, buf->pos, size);
+    ssize_t n = read(file->fd, buf->buf, size);
 
     if (n == -1) {
         return FS_FILE_ERROR;
     }
 
+    buf->pos = buf->buf;
     file->off += n;
     buf->last = buf->pos + n;
 
