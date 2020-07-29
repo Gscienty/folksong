@@ -15,28 +15,44 @@
 
 #define FS_MOD_OK 0
 
+typedef struct fs_mod_method_s fs_mod_method_t;
+struct fs_mod_method_s {
+    int (*init_mod) (fs_conf_t *conf, fs_cmd_t *cmd, void **env);
+};
+
 typedef struct fs_mod_s fs_mod_t;
 struct fs_mod_s {
-    unsigned int version;
-    fs_str_t name;
+    unsigned int    version;
+    fs_str_t        name;
 
-    fs_cmd_t commands[];
+    fs_mod_method_t *methods;
+    fs_cmd_t        commands[];
 };
 
 extern fs_mod_t *global_mods[];
 
 int fs_mod_init();
 
-#define fs_gmod_is_end(i)       \
-    (global_mods[i] == NULL)
+#define fs_mod_init_mod(mod)                    \
+    (mod->methods->init_mod)
 
-#define fs_gmod_cmd(i)          \
+#define fs_gmod_nth(i)                          \
+    (global_mods[i])
+
+#define fs_gmod_is_end(i)                       \
+    (fs_gmod_nth(i) == NULL)
+
+#define fs_gmod_nth_init_mod(i)                 \
+    (fs_mod_init_mod(fs_gmod_nth(i)))
+
+#define fs_gmod_cmd(i)                          \
     (global_mods[i]->commands)
 
-#define fs_mod(_version, _name, ...)            \
+#define fs_mod(_version, _name, _methods, ...)  \
     fs_mod_t _name = {                          \
         .version = _version,                    \
         .name = fs_str(#_name),                 \
+        .methods = _methods,                    \
         .commands = {                           \
             __VA_ARGS__                         \
             ,fs_cmd_end                         \

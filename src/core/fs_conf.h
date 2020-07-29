@@ -12,6 +12,7 @@
 #include "fs_str.h"
 #include "fs_file.h"
 #include "fs_arr.h"
+#include "fs_queue.h"
 
 #define FS_CONF_FILE_DONE   -10001
 #define FS_CONF_ERROR       -10002
@@ -30,6 +31,10 @@ struct fs_conf_s {
     fs_file_t   *file;
 
     fs_arr_t    *ctx;
+
+    fs_queue_t  st_mod;
+
+    fs_pool_t   pool;
 };
 
 int fs_conf_parse_cmdline(fs_conf_t *conf, fs_str_t *cmdline);

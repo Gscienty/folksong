@@ -6,8 +6,11 @@
 int main() {
     fs_str_t cmdline = fs_str("version { version_echo; }");
     fs_conf_t conf;
+
+    // init conf
     conf.tokens = fs_alloc_arr(NULL, 3, sizeof(fs_str_t));
     conf.ctx = fs_alloc_arr(NULL, 32, sizeof(void *));
+    fs_queue_init(&conf.st_mod);
 
     fs_mod_init();
 

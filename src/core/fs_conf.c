@@ -14,8 +14,15 @@
 
 #define FS_CONF_PAYLOAD_BUFFER_SIZE 4096
 
+typedef struct fs_st_mod_s fs_st_mod_t;
+struct fs_st_mod_s {
+    fs_queue_t  link;
+    fs_mod_t    *mod;
+};
+
 static int fs_conf_next_token(fs_conf_t *conf);
 static int fs_conf_handle(fs_conf_t *conf, int taken_status);
+static fs_st_mod_t *fs_alloc_st_mod(fs_conf_t *conf, fs_mod_t *mod);
 
 int fs_conf_parse_cmdline(fs_conf_t *conf, fs_str_t *cmdline) {
     int ret;
@@ -325,6 +332,23 @@ static int fs_conf_handle(fs_conf_t *conf, int taken_status) {
     void **ctx;
     fs_cmd_t *cmd;
     fs_str_t *name;
+    fs_st_mod_t *st_mod;
+
+    if (taken_status == FS_CONF_BLOCK_END) {
+        if (fs_queue_empty(&conf->st_mod)) {
+            return FS_CONF_ERROR;
+        }
+
+        st_mod = fs_queue_head(fs_st_mod_t, &conf->st_mod, link);
+        fs_queue_remove(&st_mod->link);
+
+        if (fs_mod_init_mod(st_mod->mod)) {
+            fs_mod_init_mod(st_mod->mod)(conf, NULL, fs_arr_last(void *, conf->ctx));
+        }
+
+        fs_pool_release(&conf->pool, st_mod);
+        return FS_CONF_OK;
+    }
 
     name = fs_arr_nth(fs_str_t, conf->tokens, 0);
 
@@ -355,9 +379,40 @@ static int fs_conf_handle(fs_conf_t *conf, int taken_status) {
                 ctx = fs_arr_push(conf->ctx);
             }
 
-            return fs_cmd_call(cmd)(conf, cmd, ctx);
+            if (taken_status == FS_CONF_BLOCK_START) {
+                if ((st_mod = fs_alloc_st_mod(conf, fs_gmod_nth(i))) == NULL) {
+                    return FS_CONF_ERROR;
+                }
+
+                fs_queue_insert_before(&conf->st_mod, &st_mod->link);
+            }
+
+            if (fs_cmd_call(cmd)(conf, cmd, ctx) != FS_CONF_OK) {
+                return FS_CONF_ERROR;
+            }
+
+            if (taken_status == FS_CONF_OK
+                && fs_gmod_nth_init_mod(i)
+                && (fs_queue_empty(&conf->st_mod) || fs_gmod_nth(i) != fs_queue_head(fs_st_mod_t, &conf->st_mod, link)->mod)) {
+
+                fs_gmod_nth_init_mod(i)(conf, cmd, ctx);
+            }
+
+            return FS_CONF_OK;
         }
     }
 
     return FS_CONF_ERROR;
+}
+
+static fs_st_mod_t *fs_alloc_st_mod(fs_conf_t *conf, fs_mod_t *mod) {
+    fs_st_mod_t *st_mod;
+    if ((st_mod = fs_pool_alloc(&conf->pool, sizeof(fs_st_mod_t))) == NULL) {
+        return NULL;
+    }
+
+    fs_queue_init(&st_mod->link);
+    st_mod->mod = mod;
+
+    return st_mod;
 }
