@@ -8,12 +8,14 @@
 
 #include "fs_conf.h"
 #include "fs_file.h"
+#include "fs_mod.h"
 #include <unistd.h>
 #include <stdio.h>
 
 #define FS_CONF_PAYLOAD_BUFFER_SIZE 4096
 
 static int fs_conf_next_token(fs_conf_t *conf);
+static int fs_conf_handle(fs_conf_t *conf, int taken_status);
 
 int fs_conf_parse_cmdline(fs_conf_t *conf, fs_str_t *cmdline) {
     int ret;
@@ -93,13 +95,7 @@ int fs_conf_parse(fs_conf_t *conf, fs_str_t *filename) {
             goto done;
         }
 
-        if (ret == FS_CONF_BLOCK_START) {
-            if (status == FS_PARSE_PARAM) {
-                goto failure;
-            }
-        }
-
-        // TODO handler
+        ret = fs_conf_handle(conf, ret);
     }
 
 failure:
@@ -134,6 +130,7 @@ static int fs_conf_next_token(fs_conf_t *conf) {
     bool found_token = false;
 
     fs_str_t *token;
+    fs_arr_count(conf->tokens) = 0;
 
     void *token_start = NULL;
 
@@ -321,7 +318,46 @@ static int fs_conf_next_token(fs_conf_t *conf) {
             }
         }
     }
+}
+
+static int fs_conf_handle(fs_conf_t *conf, int taken_status) {
+    int i;
+    void **ctx;
+    fs_cmd_t *cmd;
+    fs_str_t *name;
+
+    name = fs_arr_nth(fs_str_t, conf->tokens, 0);
+
+    for (i = 0; !fs_gmod_is_end(i); i++) {
+        cmd = fs_gmod_cmd(i);
+        if (!cmd) {
+            continue;
+        }
+
+        for ( ; !fs_cmd_is_end(cmd); cmd++) {
+            if (fs_str_cmp(fs_cmd_token(cmd), name) != 0) {
+                continue;
+            }
+
+            if (!fs_cmd_is_block(cmd) && taken_status != FS_CONF_OK) {
+                continue;
+            }
+
+            if (fs_cmd_is_block(cmd) && taken_status != FS_CONF_BLOCK_START) {
+                continue;
+            }
 
 
-    return FS_CONF_OK;
+            if (fs_is_child(cmd)) {
+                ctx = fs_arr_last(void *, conf->ctx);
+            }
+            else {
+                ctx = fs_arr_push(conf->ctx);
+            }
+
+            return fs_cmd_call(cmd)(conf, cmd, ctx);
+        }
+    }
+
+    return FS_CONF_ERROR;
 }

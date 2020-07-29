@@ -26,8 +26,10 @@
 
 typedef struct fs_conf_s fs_conf_t;
 struct fs_conf_s {
-    fs_arr_t *tokens;
-    fs_file_t *file;
+    fs_arr_t    *tokens;
+    fs_file_t   *file;
+
+    fs_arr_t    *ctx;
 };
 
 int fs_conf_parse_cmdline(fs_conf_t *conf, fs_str_t *cmdline);

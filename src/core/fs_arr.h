@@ -39,6 +39,9 @@ struct fs_arr_s {
 #define fs_arr_pool(arr)                                \
     ((arr)->pool)
 
+#define fs_arr_last(type, arr)                          \
+    (fs_arr_nth(type, arr, fs_arr_count(arr) - 1))
+
 fs_arr_t *fs_alloc_arr(fs_pool_t *pool, int capa, size_t ele_size);
 
 void *fs_arr_push(fs_arr_t *arr);

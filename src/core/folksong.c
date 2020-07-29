@@ -1,20 +1,17 @@
 #include "fs_str.h"
 #include "fs_conf.h"
+#include "fs_mod.h"
 #include <stdio.h>
 
 int main() {
-    fs_str_t cmdline = fs_str("./conf.debug");
+    fs_str_t cmdline = fs_str("version { version_echo; }");
     fs_conf_t conf;
     conf.tokens = fs_alloc_arr(NULL, 3, sizeof(fs_str_t));
+    conf.ctx = fs_alloc_arr(NULL, 32, sizeof(void *));
 
-    fs_conf_parse(&conf, &cmdline);
+    fs_mod_init();
 
-    printf("%d\n", fs_arr_count(conf.tokens));
-
-    int i;
-    for (i = 0; i < fs_arr_count(conf.tokens); i++) {
-        printf("%s\n", fs_str_get(fs_arr_nth(fs_str_t, conf.tokens, i)));
-    }
+    fs_conf_parse_cmdline(&conf, &cmdline);
 
     return 0;
 }

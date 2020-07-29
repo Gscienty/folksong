@@ -18,12 +18,12 @@
 
 typedef struct fs_buf_s fs_buf_t;
 struct fs_buf_s {
-    size_t buf_len;
-    void *buf;
-    void *pos;
-    void *last;
+    size_t  buf_len;
+    void    *buf;
+    void    *pos;
+    void    *last;
 
-    bool temp:1;
+    bool    temp:1;
 };
 
 #define fs_buf_size(b)                                      \

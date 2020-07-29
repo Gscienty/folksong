@@ -10,6 +10,7 @@
 #define _FOLK_SONG_STR_H_
 
 #include "fs_buf.h"
+#include "fs_util.h"
 #include <stdbool.h>
 #include <stddef.h>
 #include <string.h>
@@ -64,6 +65,9 @@ struct fs_str_s {
 
 #define fs_str_empty(str)                   \
     (fs_str_size(str) == 0)
+
+#define fs_str_cmp(a, b)                                                                    \
+    memcmp(fs_str_get(a), fs_str_get(b), fs_min(size_t, fs_str_size(a), fs_str_size(b)))    \
 
 #define fs_chr_LF       '\n'
 #define fs_chr_CR       '\r'
