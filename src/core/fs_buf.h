@@ -51,5 +51,6 @@ struct fs_buf_s {
 fs_buf_t *fs_create_temp_buf(fs_pool_t *pool, size_t size);
 
 int fs_buf_alloc(fs_buf_t *buf, size_t size);
+int fs_buf_release(fs_buf_t *buf);
 
 #endif

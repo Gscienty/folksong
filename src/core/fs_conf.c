@@ -9,16 +9,41 @@
 #include "fs_conf.h"
 #include "fs_file.h"
 #include <unistd.h>
+#include <stdio.h>
 
 #define FS_CONF_PAYLOAD_BUFFER_SIZE 4096
 
 static int fs_conf_next_token(fs_conf_t *conf);
+
+int fs_conf_parse_cmdline(fs_conf_t *conf, fs_str_t *cmdline) {
+    int ret;
+    fs_file_t tmp_conf_file;
+
+    if (fs_str_empty(cmdline)) {
+        return FS_CONF_OK;
+    }
+
+    fs_memzero(&tmp_conf_file, sizeof(fs_file_t));
+
+    tmp_conf_file.buf = *fs_str_buf(cmdline);
+    tmp_conf_file.fd = FS_INVALID_FILE;
+
+    conf->file = &tmp_conf_file;
+
+    ret = fs_conf_parse(conf, NULL);
+
+    conf->file = NULL;
+
+    return FS_CONF_OK;
+}
 
 int fs_conf_parse(fs_conf_t *conf, fs_str_t *filename) {
     fs_file_t *stored_file;
     fs_file_t file;
     fs_fd_t fd;
     fs_buf_t buf;
+    int ret;
+    int status;
 
     if (filename) {
         if((fd = fs_file_open(fs_str_get(filename), FS_FILE_RDONLY, FS_FILE_OPEN, 0)) == FS_INVALID_FILE) {
@@ -39,23 +64,65 @@ int fs_conf_parse(fs_conf_t *conf, fs_str_t *filename) {
             // log
             goto failure;
         }
+        buf.pos = buf.last;
 
         conf->file->line = 1;
         conf->file->buf = buf;
         conf->file->name = *filename;
+
+        status = FS_PARSE_FILE;
+    }
+    else if (!fs_file_is_invalid(conf->file)) {
+        status = FS_PARSE_BLOCK;
+    }
+    else {
+        status = FS_PARSE_PARAM;
     }
 
-    fs_conf_next_token(conf);
+    for ( ;; ) {
+        ret = fs_conf_next_token(conf);
+
+        if (ret == FS_CONF_ERROR) {
+            goto done;
+        }
+
+        if (ret == FS_CONF_FILE_DONE) {
+            if (status == FS_PARSE_BLOCK) {
+                goto failure;
+            }
+            goto done;
+        }
+
+        if (ret == FS_CONF_BLOCK_START) {
+            if (status == FS_PARSE_PARAM) {
+                goto failure;
+            }
+        }
+
+        // TODO handler
+    }
 
 failure:
-    return 0;
+    ret = FS_CONF_ERROR;
+
+done:
+    if (filename) {
+        fs_buf_release(fs_file_buf(conf->file));
+        fs_file_close(conf->file);
+        conf->file = stored_file;
+    }
+
+    if (ret == FS_CONF_ERROR) {
+        return FS_CONF_ERROR;
+    }
+
+    return FS_CONF_OK;
 }
 
 static int fs_conf_next_token(fs_conf_t *conf) {
     char chr;
-    ssize_t n;
-    ssize_t size;
-    fs_buf_t buf;
+    char *src;
+    char *dst;
 
     bool sharp = false;
     bool quoted = false;
@@ -68,37 +135,19 @@ static int fs_conf_next_token(fs_conf_t *conf) {
 
     fs_str_t *token;
 
-    buf = conf->file->buf;
-
-    buf.pos = buf.buf;
-    buf.last = buf.buf;
-
     void *token_start = NULL;
 
     for ( ;; ) {
-        if (fs_buf_overflow(&buf)) {
+        if (fs_file_buf_overflow(conf->file)) {
             if (fs_file_done(conf->file)) {
                 return FS_CONF_FILE_DONE;
             }
-
-            size = fs_file_size(conf->file) - fs_file_off(conf->file);
-
-            if ((size_t) size > fs_buf_capacity(&buf)) {
-                size = fs_buf_capacity(&buf);
-            }
-
-            n = fs_file_read(conf->file, &buf, size, fs_file_off(conf->file));
-
-            if (n == FS_FILE_ERROR) {
-                return FS_CONF_ERROR;
-            }
-
-            if (n != size) {
+            if (fs_file_read(conf->file, fs_file_remain_size(conf->file)) == FS_FILE_ERROR) {
                 return FS_CONF_ERROR;
             }
         }
 
-        chr = fs_buf_lshift(char, &buf);
+        chr = fs_file_buf_lshift(char, conf->file);
 
         if (chr == fs_chr_LF) {
             fs_file_line(conf->file)++;
@@ -157,31 +206,31 @@ static int fs_conf_next_token(fs_conf_t *conf) {
                 continue;
 
             case fs_chr_ESCAPE:
-                token_start = fs_buf_pos(&buf);
+                token_start = fs_file_buf_pos(conf->file);
                 vacancy = false;
                 quoted = true;
                 continue;
 
             case fs_chr_DQUO:
-                token_start = fs_buf_pos(&buf);
+                token_start = fs_file_buf_pos(conf->file);
                 d_quote = true;
                 vacancy = false;
                 continue;
 
             case fs_chr_SQUO:
-                token_start = fs_buf_pos(&buf);
+                token_start = fs_file_buf_pos(conf->file);
                 s_quote = true;
                 vacancy = false;
                 continue;
 
             case fs_chr_DOLLAR:
-                token_start = fs_buf_pos(&buf) - 1;
+                token_start = fs_file_buf_pos(conf->file) - 1;
                 variable = true;
                 vacancy = false;
                 continue;
 
             default:
-                token_start = fs_buf_pos(&buf) - 1;
+                token_start = fs_file_buf_pos(conf->file) - 1;
                 vacancy = false;
             }
         }
@@ -225,14 +274,11 @@ static int fs_conf_next_token(fs_conf_t *conf) {
 
                 token = fs_arr_push(conf->tokens);
 
-                if (fs_buf_alloc(fs_str_buf(token), fs_buf_pos(&buf) - 1 - token_start + 1) != FS_BUF_OK) {
+                if (fs_buf_alloc(fs_str_buf(token), fs_buf_pos(fs_file_buf(conf->file)) - 1 - token_start + 1) != FS_BUF_OK) {
                     return FS_CONF_ERROR;
                 }
 
-                char *src;
-                char *dst;
-
-                for (dst = fs_buf_pos(fs_str_buf(token)), src = token_start; (void *) src < fs_buf_pos(&buf) - 1;) {
+                for (dst = fs_str_get(token), src = token_start; (void *) src < fs_file_buf_pos(conf->file) - 1;) {
                     if (*src == fs_chr_ESCAPE) {
                         switch (*(src + 1)) {
                         case fs_chr_DQUO:

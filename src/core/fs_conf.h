@@ -20,11 +20,17 @@
 #define FS_CONF_BLOCK_END   2
 #define FS_CONF_OK          0
 
+#define FS_PARSE_FILE       0
+#define FS_PARSE_BLOCK      1
+#define FS_PARSE_PARAM      2
+
 typedef struct fs_conf_s fs_conf_t;
 struct fs_conf_s {
     fs_arr_t *tokens;
     fs_file_t *file;
 };
+
+int fs_conf_parse_cmdline(fs_conf_t *conf, fs_str_t *cmdline);
 
 int fs_conf_parse(fs_conf_t *conf, fs_str_t *filename);
 

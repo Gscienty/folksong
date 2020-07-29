@@ -26,15 +26,18 @@ fs_buf_t *fs_create_temp_buf(fs_pool_t *pool, size_t size) {
 }
 
 int fs_buf_alloc(fs_buf_t *buf, size_t size) {
-    if (!buf) {
-        return FS_BUF_ERROR;
-    }
 
     buf->buf = malloc(size);
     buf->buf_len = size;
     buf->pos = buf->buf;
     buf->last = buf->pos + size;
     buf->temp = true;
+
+    return FS_BUF_OK;
+}
+
+int fs_buf_release(fs_buf_t *buf) {
+    free(buf->buf);
 
     return FS_BUF_OK;
 }

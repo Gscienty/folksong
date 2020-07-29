@@ -9,7 +9,7 @@
 #include "fs_file.h"
 
 
-ssize_t fs_file_read(fs_file_t *file, fs_buf_t *buf, size_t size, off_t off) {
+ssize_t fs_file_read_in_buf(fs_file_t *file, fs_buf_t *buf, size_t size, off_t off) {
     if (lseek(file->fd, off, SEEK_SET) == -1) {
         return FS_FILE_ERROR;
     }

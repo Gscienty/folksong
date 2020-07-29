@@ -55,8 +55,47 @@ struct fs_file_s {
 #define fs_file_done(file)                          \
     ((long) (file)->off >= fs_file_size(file))
 
+#define fs_file_is_invalid(file)                    \
+    ((file)->fd == FS_INVALID_FILE)
 
+#define fs_file_buf(file)                           \
+    (&(file)->buf)
 
-ssize_t fs_file_read(fs_file_t *file, fs_buf_t *buf, size_t size, off_t off);
+#define fs_file_close(file)                         \
+    close((file)->fd)
+
+#define fs_file_buf_overflow(file)                  \
+    fs_buf_overflow(fs_file_buf(file))
+
+#define fs_file_buf_capacity(file)                  \
+    fs_buf_capacity(fs_file_buf(file))
+
+#define fs_file_remain_size(file)                   \
+    (fs_file_size(file) - fs_file_off(file))
+
+#define fs_file_read(file, size)                                                                    \
+    ({                                                                                              \
+        ssize_t _target = (size);                                                                   \
+        if ((size_t) _target > fs_file_buf_capacity(file)) {                                        \
+            _target = fs_file_buf_capacity(file);                                                   \
+        }                                                                                           \
+        ssize_t _n = fs_file_read_in_buf(file, fs_file_buf(file), _target, fs_file_off(file));      \
+        int err;                                                                                    \
+        if (_n == FS_FILE_ERROR) {                                                                  \
+            err = FS_FILE_ERROR;                                                                    \
+        }                                                                                           \
+        if (_n != _target) {                                                                        \
+            err = FS_FILE_ERROR;                                                                    \
+        }                                                                                           \
+        err;                                                                                        \
+     })
+
+#define fs_file_buf_lshift(type, file)              \
+    (fs_buf_lshift(type, fs_file_buf(file)))
+
+#define fs_file_buf_pos(file)                       \
+    (fs_buf_pos(fs_file_buf(file)))
+
+ssize_t fs_file_read_in_buf(fs_file_t *file, fs_buf_t *buf, size_t size, off_t off);
 
 #endif

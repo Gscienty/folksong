@@ -3,13 +3,11 @@
 #include <stdio.h>
 
 int main() {
-    fs_str_t conf_filename = fs_str("./conf.debug");
-
+    fs_str_t cmdline = fs_str("./conf.debug");
     fs_conf_t conf;
-
     conf.tokens = fs_alloc_arr(NULL, 3, sizeof(fs_str_t));
 
-    fs_conf_parse(&conf, &conf_filename);
+    fs_conf_parse(&conf, &cmdline);
 
     printf("%d\n", fs_arr_count(conf.tokens));
 

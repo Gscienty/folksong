@@ -51,13 +51,19 @@ struct fs_str_s {
      })
 
 #define fs_str_get(str)                     \
-    ((unsigned char *) ((str)->buf.pos))
+    ((char *) ((str)->buf.pos))
 
 #define fs_str_buf(str)                     \
     (&(str)->buf)
 
 #define fs_memcpy(dst, src, size)           \
     memcpy((dst), (src), (size))
+
+#define fs_memzero(ptr, size)               \
+    memset(ptr, 0, size)
+
+#define fs_str_empty(str)                   \
+    (fs_str_size(str) == 0)
 
 #define fs_chr_LF       '\n'
 #define fs_chr_CR       '\r'
