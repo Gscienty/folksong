@@ -17,9 +17,11 @@ typedef struct fs_str_s fs_str_t;
 typedef struct fs_conf_s fs_conf_t;
 typedef struct fs_file_s fs_file_t;
 typedef struct fs_queue_s fs_queue_t;
+typedef struct fs_mod_s fs_mod_t;
 typedef struct fs_run_s fs_run_t;
 typedef struct fs_st_mod_s fs_st_mod_t;
-typedef struct fs_mod_s fs_mod_t;
+typedef struct fs_qe_inited_s fs_qe_inited_t;
+typedef struct fs_uv_s fs_uv_t;
 
 typedef int fs_fd_t;
 

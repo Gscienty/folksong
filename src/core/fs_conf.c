@@ -12,6 +12,7 @@
 #include "fs_mod.h"
 #include "fs_util.h"
 #include <unistd.h>
+#include <stdio.h>
 
 #define FS_CONF_PAYLOAD_BUFFER_SIZE 4096
 
@@ -97,6 +98,10 @@ int fs_conf_parse(fs_conf_t *conf, fs_str_t *filename) {
         }
 
         ret = fs_conf_handle(conf, ret);
+
+        if (ret != FS_CONF_OK) {
+            // TODO echo error
+        }
     }
 
 failure:
@@ -324,23 +329,20 @@ static int fs_conf_next_token(fs_conf_t *conf) {
 
 static int fs_conf_handle(fs_conf_t *conf, int taken_status) {
     int i;
-    void **ctx;
+    int ret;
     fs_cmd_t *cmd;
     fs_str_t *name;
-    fs_mod_t *mod;
-    bool single_conf_mod = false;
 
     if (taken_status == FS_CONF_BLOCK_END) {
-        if (fs_run_st_empty(&conf->run)) {
+        if (fs_run_st_empty(conf->run)) {
             return FS_CONF_ERROR;
         }
 
-        mod = fs_run_st_top(&conf->run)->mod;
-        fs_run_st_pop(&conf->run);
-
-        if (fs_mod_init_mod(mod)) {
-            fs_mod_init_mod_completed(mod)(&conf->run, *fs_run_last_ctx(&conf->run));
+        if (fs_mod_init_mod_completed(fs_run_st_top_mod(conf->run))) {
+            fs_mod_init_mod_completed(fs_run_st_top_mod(conf->run))(conf->run, fs_run_st_top_ctx(conf->run));
         }
+
+        fs_run_st_pop(conf->run);
 
         return FS_CONF_OK;
     }
@@ -367,44 +369,52 @@ static int fs_conf_handle(fs_conf_t *conf, int taken_status) {
             }
 
             if (fs_cmd_is_child(cmd)) {
-                if (fs_run_st_empty(&conf->run)) {
+                if (fs_run_st_empty(conf->run)) {
                     return FS_CONF_ERROR;
                 }
 
-                if (fs_cmd_call(cmd)(&conf->run, *fs_run_st_top(&conf->run)->ctx) != FS_CONF_OK) {
+                if (fs_cmd_call(cmd)(conf->run, *fs_run_st_top_ctx(conf->run)) != FS_CONF_OK) {
                     return FS_CONF_ERROR;
                 }
             }
             else {
-                if (taken_status == FS_CONF_BLOCK_START) {
-                    if (fs_run_push(&conf->run, fs_gmod_nth(i)) == NULL) {
-                        return FS_CONF_ERROR;
-                    }
-
-                    if (fs_gmod_nth_init_mod(i)) {
-                        fs_gmod_nth_init_mod(i)(conf, cmd, fs_run_st_top(&conf->run)->ctx);
-                    }
-                }
-
-                if (taken_status == FS_CONF_OK
-                    && fs_gmod_nth_init_mod(i)
-                    && (fs_run_st_empty(&conf->run) || fs_gmod_nth(i) != fs_run_st_top(&conf->run)->mod)) {
-
-                    ctx = fs_run_ctx_push(&conf->run);
-
-                    if (fs_gmod_nth_init_mod(i)) {
-                        fs_gmod_nth_init_mod(i)(conf, cmd, ctx);
-                    }
-
-                    single_conf_mod = true;
-                }
-
-                if (fs_cmd_call(cmd)(&conf->run, *fs_run_st_top(&conf->run)->ctx) != FS_CONF_OK) {
+                if (fs_run_st_push(conf->run, fs_gmod_nth(i)) == NULL) {
                     return FS_CONF_ERROR;
                 }
 
-                if (single_conf_mod && fs_gmod_nth_init_mod_completed(i)) {
-                    fs_gmod_nth_init_mod_completed(i)(&conf->run, *ctx);
+                if (fs_gmod_nth_init_mod(i)) {
+                    ret = fs_gmod_nth_init_mod(i)(conf, cmd, fs_run_st_top_ctx(conf->run));
+
+                    if (ret == FS_CONF_PASS) {
+                        conf->run->ctx->ele_count--;
+                        fs_run_st_pop(conf->run);
+                        continue;
+                    }
+                    if (ret != FS_CONF_OK) {
+                        return FS_CONF_ERROR;
+                    }
+                }
+
+                if (!fs_gmod_nth_used(i)) {
+                    fs_gmod_nth_ctxs(i) = fs_alloc_arr(&conf->pool, 1, sizeof(void *));
+                }
+                fs_gmod_nth_used(i) = true;
+                fs_gmod_stored_ctx(i, *fs_run_st_top_ctx(conf->run));
+
+                if (fs_cmd_call(cmd)(conf->run, *fs_run_st_top_ctx(conf->run)) != FS_CONF_OK) {
+                    return FS_CONF_ERROR;
+                }
+
+                if (taken_status == FS_CONF_OK) {
+
+                    if (fs_gmod_nth_init_mod_completed(i)) {
+                        if (fs_gmod_nth_init_mod_completed(i)(conf->run, *fs_run_st_top_ctx(conf->run)) != FS_CONF_OK) {
+                            return FS_CONF_ERROR;
+                        }
+                    }
+
+                    fs_run_st_pop(conf->run);
+
                 }
 
             }

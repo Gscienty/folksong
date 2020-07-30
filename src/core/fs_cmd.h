@@ -20,27 +20,27 @@ struct fs_cmd_s {
     bool        child:1;
 };
 
-#define fs_cmd_end                  \
-    {                               \
-        .token  = fs_null_str,      \
-        .call   = NULL,             \
-        .block  = false,            \
-        .child  = false,            \
+#define fs_cmd_end                                  \
+    {                                               \
+        .token  = fs_null_str,                      \
+        .call   = NULL,                             \
+        .block  = false,                            \
+        .child  = false,                            \
     }
 
-#define fs_cmd_token(cmd)               \
+#define fs_cmd_token(cmd)                           \
     (&(cmd)->token)
 
-#define fs_cmd_is_end(cmd)              \
+#define fs_cmd_is_end(cmd)                          \
     (fs_str_empty(fs_cmd_token(cmd)))
 
-#define fs_cmd_call(cmd)                \
+#define fs_cmd_call(cmd)                            \
     ((cmd)->call)
 
-#define fs_cmd_is_block(cmd)            \
+#define fs_cmd_is_block(cmd)                        \
     ((cmd)->block)
 
-#define fs_cmd_is_child(cmd)                \
+#define fs_cmd_is_child(cmd)                        \
     ((cmd)->child)
 
 #define fs_cmd(_token, _call, _block, _child)       \
@@ -50,5 +50,8 @@ struct fs_cmd_s {
         .block  = _block,                           \
         .child  = _child                            \
     }
+
+#define fs_cmd_equal(cmd, _call)                    \
+    ((cmd)->call == (_call))
 
 #endif
