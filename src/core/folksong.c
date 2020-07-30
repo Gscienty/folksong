@@ -6,7 +6,7 @@
 #include <stdio.h>
 
 int main() {
-    fs_str_t cmdline = fs_str("version { version_echo; }");
+    fs_str_t cmdline = fs_str("fs-version { fs-version-art; }");
     fs_conf_t conf;
 
     // init conf

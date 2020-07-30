@@ -23,7 +23,7 @@ static int fs_mod_verison_init(fs_run_t *run, void *ctx) {
     return FS_CONF_OK;
 }
 
-static int fs_mod_version_echo(fs_run_t *run, void *ctx) {
+static int fs_mod_version_art(fs_run_t *run, void *ctx) {
     (void) run;
 
     ((fs_mod_version_t *) ctx)->welcome = 
@@ -54,10 +54,10 @@ static int fs_mod_version_init_mod_completed(fs_run_t *run, void *ctx) {
 }
 
 static fs_mod_method_t method = {
-    .init_mod = fs_mod_version_init_mod,
+    .init_mod           = fs_mod_version_init_mod,
     .init_mod_completed = fs_mod_version_init_mod_completed
 };
 
 fs_mod(1, fs_mod_version, &method,
-       fs_cmd("version",        fs_mod_verison_init, true,  false),
-       fs_cmd("version_echo",   fs_mod_version_echo, false, true));
+       fs_cmd("fs-version",     fs_mod_verison_init,    true,  false),
+       fs_cmd("fs-version-art", fs_mod_version_art,     false, true));

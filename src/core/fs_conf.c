@@ -131,6 +131,7 @@ static int fs_conf_next_token(fs_conf_t *conf) {
     bool found_token = false;
 
     fs_str_t *token;
+    // TODO release co->tokens's str
     fs_arr_count(conf->tokens) = 0;
 
     void *token_start = NULL;
