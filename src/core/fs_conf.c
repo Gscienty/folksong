@@ -365,35 +365,47 @@ static int fs_conf_handle(fs_conf_t *conf, int taken_status) {
                 continue;
             }
 
-            if (taken_status == FS_CONF_BLOCK_START) {
-                if (fs_run_push(&conf->run, fs_gmod_nth(i)) == NULL) {
+            if (fs_cmd_is_child(cmd)) {
+                if (fs_run_st_empty(&conf->run)) {
                     return FS_CONF_ERROR;
                 }
 
-                if (fs_gmod_nth_init_mod(i)) {
-                    fs_gmod_nth_init_mod(i)(conf, cmd, fs_run_st_top(&conf->run)->ctx);
+                if (fs_cmd_call(cmd)(&conf->run, *fs_run_st_top(&conf->run)->ctx) != FS_CONF_OK) {
+                    return FS_CONF_ERROR;
                 }
             }
+            else {
+                if (taken_status == FS_CONF_BLOCK_START) {
+                    if (fs_run_push(&conf->run, fs_gmod_nth(i)) == NULL) {
+                        return FS_CONF_ERROR;
+                    }
 
-            if (taken_status == FS_CONF_OK
-                && fs_gmod_nth_init_mod(i)
-                && (fs_run_st_empty(&conf->run) || fs_gmod_nth(i) != fs_run_st_top(&conf->run)->mod)) {
-
-                ctx = fs_run_ctx_push(&conf->run);
-
-                if (fs_gmod_nth_init_mod(i)) {
-                    fs_gmod_nth_init_mod(i)(conf, cmd, ctx);
+                    if (fs_gmod_nth_init_mod(i)) {
+                        fs_gmod_nth_init_mod(i)(conf, cmd, fs_run_st_top(&conf->run)->ctx);
+                    }
                 }
 
-                single_conf_mod = true;
-            }
+                if (taken_status == FS_CONF_OK
+                    && fs_gmod_nth_init_mod(i)
+                    && (fs_run_st_empty(&conf->run) || fs_gmod_nth(i) != fs_run_st_top(&conf->run)->mod)) {
 
-            if (fs_cmd_call(cmd)(&conf->run, *fs_run_st_top(&conf->run)->ctx) != FS_CONF_OK) {
-                return FS_CONF_ERROR;
-            }
+                    ctx = fs_run_ctx_push(&conf->run);
 
-            if (single_conf_mod && fs_gmod_nth_init_mod_completed(i)) {
-                fs_gmod_nth_init_mod_completed(i)(&conf->run, *ctx);
+                    if (fs_gmod_nth_init_mod(i)) {
+                        fs_gmod_nth_init_mod(i)(conf, cmd, ctx);
+                    }
+
+                    single_conf_mod = true;
+                }
+
+                if (fs_cmd_call(cmd)(&conf->run, *fs_run_st_top(&conf->run)->ctx) != FS_CONF_OK) {
+                    return FS_CONF_ERROR;
+                }
+
+                if (single_conf_mod && fs_gmod_nth_init_mod_completed(i)) {
+                    fs_gmod_nth_init_mod_completed(i)(&conf->run, *ctx);
+                }
+
             }
 
             return FS_CONF_OK;

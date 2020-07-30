@@ -40,7 +40,7 @@ struct fs_cmd_s {
 #define fs_cmd_is_block(cmd)            \
     ((cmd)->block)
 
-#define fs_is_child(cmd)                \
+#define fs_cmd_is_child(cmd)                \
     ((cmd)->child)
 
 #define fs_cmd(_token, _call, _block, _child)       \
