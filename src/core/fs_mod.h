@@ -9,18 +9,17 @@
 #ifndef _FOLK_SONG_MOD_H_
 #define _FOLK_SONG_MOD_H_
 
-#include "fs_cmd.h"
+#include "fs_core.h"
 #include "fs_str.h"
+#include "fs_cmd.h"
 #include <stddef.h>
-
-#define FS_MOD_OK 0
 
 typedef struct fs_mod_method_s fs_mod_method_t;
 struct fs_mod_method_s {
-    int (*init_mod) (fs_conf_t *conf, fs_cmd_t *cmd, void **env);
+    int (*init_mod) (fs_conf_t *conf, fs_cmd_t *cmd, void **ctx);
+    int (*init_mod_completed) (fs_run_t *run, void *ctx);
 };
 
-typedef struct fs_mod_s fs_mod_t;
 struct fs_mod_s {
     unsigned int    version;
     fs_str_t        name;
@@ -34,7 +33,10 @@ extern fs_mod_t *global_mods[];
 int fs_mod_init();
 
 #define fs_mod_init_mod(mod)                    \
-    (mod->methods->init_mod)
+    ((mod)->methods->init_mod)
+
+#define fs_mod_init_mod_completed(mod)          \
+    ((mod)->methods->init_mod_completed)
 
 #define fs_gmod_nth(i)                          \
     (global_mods[i])
@@ -44,6 +46,9 @@ int fs_mod_init();
 
 #define fs_gmod_nth_init_mod(i)                 \
     (fs_mod_init_mod(fs_gmod_nth(i)))
+
+#define fs_gmod_nth_init_mod_completed(i)       \
+    (fs_mod_init_mod_completed(fs_gmod_nth(i))) \
 
 #define fs_gmod_cmd(i)                          \
     (global_mods[i]->commands)

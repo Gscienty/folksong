@@ -9,14 +9,13 @@
 #ifndef _FOLK_SONG_CMD_H_
 #define _FOLK_SONG_CMD_H_
 
+#include "fs_core.h"
 #include "fs_str.h"
-#include "fs_conf.h"
 #include <stdbool.h>
 
-typedef struct fs_cmd_s fs_cmd_t;
 struct fs_cmd_s {
     fs_str_t    token;
-    int         (*call) (fs_conf_t *conf, fs_cmd_t *cmd, void **env);
+    int         (*call) (fs_run_t *run, void *ctx);
     bool        block:1;
     bool        child:1;
 };

@@ -15,5 +15,5 @@ int fs_mod_init() {
 
     for (mod_count = 0; global_mods[mod_count]; mod_count++) ;
 
-    return FS_MOD_OK;
+    return 0;
 }

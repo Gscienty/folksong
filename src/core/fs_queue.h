@@ -9,7 +9,8 @@
 #ifndef _FOLK_SONG_QUEUE_H_
 #define _FOLK_SONG_QUEUE_H_
 
-typedef struct fs_queue_s fs_queue_t;
+#include "fs_core.h"
+
 struct fs_queue_s {
     fs_queue_t *prev;
     fs_queue_t *next;
@@ -46,8 +47,10 @@ struct fs_queue_s {
         (q)->prev->next = (q)->next;    \
      })
 
-#define fs_queue_payload(type, q, link)                         \
+#define fs_queue_reflict(type, q, link)                         \
     ((type *) ((void *) (q) - ((void *) &((type *) 0)->link)))
+
+#define fs_queue_payload fs_queue_reflict
 
 #define fs_queue_head(type, q, link)                            \
     (fs_queue_payload(type, (q)->next, link))

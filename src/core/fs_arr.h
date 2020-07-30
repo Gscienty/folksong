@@ -9,13 +9,13 @@
 #ifndef _FOLK_SONG_ARR_H_
 #define _FOLK_SONG_ARR_H_
 
+#include "fs_core.h"
 #include "fs_pool.h"
 #include <stddef.h>
 
 #define FS_ARR_ERROR    -1
 #define FS_ARR_OK       0
 
-typedef struct fs_arr_s fs_arr_t;
 struct fs_arr_s {
     void        *elems;
     int         ele_capa;

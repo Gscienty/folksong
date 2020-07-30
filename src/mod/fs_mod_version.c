@@ -7,44 +7,55 @@
  */
 
 #include "fs_mod.h"
+#include "fs_conf.h"
 #include <stdio.h>
 
-static int fs_mod_verison_init(fs_conf_t *conf, fs_cmd_t *cmd, void **env) {
-    (void) conf;
-    (void) cmd;
+typedef struct fs_mod_version_s fs_mod_version_t;
+struct fs_mod_version_s {
+    char *welcome;
+};
 
-    *env = "folk song";
+static int fs_mod_verison_init(fs_run_t *run, void *ctx) {
+    (void) run;
 
-    return FS_MOD_OK;
+    ((fs_mod_version_t *) ctx)->welcome = "folk song";
+
+    return FS_CONF_OK;
 }
 
-static int fs_mod_version_echo(fs_conf_t *conf, fs_cmd_t *cmd, void **env) {
-    (void) conf;
-    (void) cmd;
-    (void) env;
+static int fs_mod_version_echo(fs_run_t *run, void *ctx) {
+    (void) run;
 
-    *env = 
+    ((fs_mod_version_t *) ctx)->welcome = 
          "_____ ____  _     _  __   ____  ____  _      _____\n"
          "/    //  _ \\/ \\   / |/ /  / ___\\/  _ \\/ \\  /|/  __/\n"
          "|  __\\| / \\|| |   |   /   |    \\| / \\|| |\\ ||| |  _\n"
          "| |   | \\_/|| |_/\\|   \\   \\___ || \\_/|| | \\||| |_//\n"
          "\\_/   \\____/\\____/\\_|\\_\\  \\____/\\____/\\_/  \\|\\____\\ \n\n";
 
-
-    return FS_MOD_OK;
+    return FS_CONF_OK;
 }
 
-static int fs_mod_version_init_mod(fs_conf_t *conf, fs_cmd_t *cmd, void **env) {
+static int fs_mod_version_init_mod(fs_conf_t *conf, fs_cmd_t *cmd, void **ctx) {
     (void) conf;
     (void) cmd;
 
-    printf("%s\n", (char *) *env);
+    *ctx = fs_pool_alloc(&conf->pool, sizeof(fs_mod_version_t));
+
+    return FS_CONF_OK;
+}
+
+static int fs_mod_version_init_mod_completed(fs_run_t *run, void *ctx) {
+    (void) run;
+
+    printf("%s\n", ((fs_mod_version_t *) ctx)->welcome);
 
     return FS_CONF_OK;
 }
 
 static fs_mod_method_t method = {
-    .init_mod = fs_mod_version_init_mod
+    .init_mod = fs_mod_version_init_mod,
+    .init_mod_completed = fs_mod_version_init_mod_completed
 };
 
 fs_mod(1, fs_mod_version, &method,

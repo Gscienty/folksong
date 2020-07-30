@@ -7,6 +7,7 @@
  */
 
 #include "fs_buf.h"
+#include "fs_pool.h"
 #include <stddef.h>
 #include <malloc.h>
 

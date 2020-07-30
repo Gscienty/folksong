@@ -7,22 +7,16 @@
  */
 
 #include "fs_conf.h"
+#include "fs_arr.h"
 #include "fs_file.h"
 #include "fs_mod.h"
+#include "fs_util.h"
 #include <unistd.h>
-#include <stdio.h>
 
 #define FS_CONF_PAYLOAD_BUFFER_SIZE 4096
 
-typedef struct fs_st_mod_s fs_st_mod_t;
-struct fs_st_mod_s {
-    fs_queue_t  link;
-    fs_mod_t    *mod;
-};
-
 static int fs_conf_next_token(fs_conf_t *conf);
 static int fs_conf_handle(fs_conf_t *conf, int taken_status);
-static fs_st_mod_t *fs_alloc_st_mod(fs_conf_t *conf, fs_mod_t *mod);
 
 int fs_conf_parse_cmdline(fs_conf_t *conf, fs_str_t *cmdline) {
     int ret;
@@ -332,21 +326,21 @@ static int fs_conf_handle(fs_conf_t *conf, int taken_status) {
     void **ctx;
     fs_cmd_t *cmd;
     fs_str_t *name;
-    fs_st_mod_t *st_mod;
+    fs_mod_t *mod;
+    bool single_conf_mod = false;
 
     if (taken_status == FS_CONF_BLOCK_END) {
-        if (fs_queue_empty(&conf->st_mod)) {
+        if (fs_run_st_empty(&conf->run)) {
             return FS_CONF_ERROR;
         }
 
-        st_mod = fs_queue_head(fs_st_mod_t, &conf->st_mod, link);
-        fs_queue_remove(&st_mod->link);
+        mod = fs_run_st_top(&conf->run)->mod;
+        fs_run_st_pop(&conf->run);
 
-        if (fs_mod_init_mod(st_mod->mod)) {
-            fs_mod_init_mod(st_mod->mod)(conf, NULL, fs_arr_last(void *, conf->ctx));
+        if (fs_mod_init_mod(mod)) {
+            fs_mod_init_mod_completed(mod)(&conf->run, *fs_run_last_ctx(&conf->run));
         }
 
-        fs_pool_release(&conf->pool, st_mod);
         return FS_CONF_OK;
     }
 
@@ -371,31 +365,35 @@ static int fs_conf_handle(fs_conf_t *conf, int taken_status) {
                 continue;
             }
 
-
-            if (fs_is_child(cmd)) {
-                ctx = fs_arr_last(void *, conf->ctx);
-            }
-            else {
-                ctx = fs_arr_push(conf->ctx);
-            }
-
             if (taken_status == FS_CONF_BLOCK_START) {
-                if ((st_mod = fs_alloc_st_mod(conf, fs_gmod_nth(i))) == NULL) {
+                if (fs_run_push(&conf->run, fs_gmod_nth(i)) == NULL) {
                     return FS_CONF_ERROR;
                 }
 
-                fs_queue_insert_before(&conf->st_mod, &st_mod->link);
-            }
-
-            if (fs_cmd_call(cmd)(conf, cmd, ctx) != FS_CONF_OK) {
-                return FS_CONF_ERROR;
+                if (fs_gmod_nth_init_mod(i)) {
+                    fs_gmod_nth_init_mod(i)(conf, cmd, fs_run_st_top(&conf->run)->ctx);
+                }
             }
 
             if (taken_status == FS_CONF_OK
                 && fs_gmod_nth_init_mod(i)
-                && (fs_queue_empty(&conf->st_mod) || fs_gmod_nth(i) != fs_queue_head(fs_st_mod_t, &conf->st_mod, link)->mod)) {
+                && (fs_run_st_empty(&conf->run) || fs_gmod_nth(i) != fs_run_st_top(&conf->run)->mod)) {
 
-                fs_gmod_nth_init_mod(i)(conf, cmd, ctx);
+                ctx = fs_run_ctx_push(&conf->run);
+
+                if (fs_gmod_nth_init_mod(i)) {
+                    fs_gmod_nth_init_mod(i)(conf, cmd, ctx);
+                }
+
+                single_conf_mod = true;
+            }
+
+            if (fs_cmd_call(cmd)(&conf->run, *fs_run_st_top(&conf->run)->ctx) != FS_CONF_OK) {
+                return FS_CONF_ERROR;
+            }
+
+            if (single_conf_mod && fs_gmod_nth_init_mod_completed(i)) {
+                fs_gmod_nth_init_mod_completed(i)(&conf->run, *ctx);
             }
 
             return FS_CONF_OK;
@@ -405,14 +403,3 @@ static int fs_conf_handle(fs_conf_t *conf, int taken_status) {
     return FS_CONF_ERROR;
 }
 
-static fs_st_mod_t *fs_alloc_st_mod(fs_conf_t *conf, fs_mod_t *mod) {
-    fs_st_mod_t *st_mod;
-    if ((st_mod = fs_pool_alloc(&conf->pool, sizeof(fs_st_mod_t))) == NULL) {
-        return NULL;
-    }
-
-    fs_queue_init(&st_mod->link);
-    st_mod->mod = mod;
-
-    return st_mod;
-}

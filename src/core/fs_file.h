@@ -9,17 +9,15 @@
 #ifndef _FOLK_SONG_FILE_H_
 #define _FOLK_SONG_FILE_H_
 
-#include "fs_str.h"
+#include "fs_core.h"
 #include "fs_buf.h"
+#include "fs_str.h"
 #include <fcntl.h>
 #include <unistd.h>
 #include <sys/stat.h>
 
 #define FS_FILE_ERROR -20001
 
-typedef int fs_fd_t;
-
-typedef struct fs_file_s fs_file_t;
 struct fs_file_s {
     fs_str_t    name;
     fs_fd_t     fd;

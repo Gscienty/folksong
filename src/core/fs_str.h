@@ -9,13 +9,12 @@
 #ifndef _FOLK_SONG_STR_H_
 #define _FOLK_SONG_STR_H_
 
+#include "fs_core.h"
 #include "fs_buf.h"
-#include "fs_util.h"
 #include <stdbool.h>
 #include <stddef.h>
 #include <string.h>
 
-typedef struct fs_str_s fs_str_t;
 struct fs_str_s {
     fs_buf_t buf;
 };

@@ -9,14 +9,13 @@
 #ifndef _FOLK_SONG_BUF_H_
 #define _FOLK_SONG_BUF_H_
 
-#include "fs_pool.h"
+#include "fs_core.h"
 #include <sys/types.h>
 #include <stdbool.h>
 
 #define FS_BUF_ERROR    -1
 #define FS_BUF_OK       0
 
-typedef struct fs_buf_s fs_buf_t;
 struct fs_buf_s {
     size_t  buf_len;
     void    *buf;

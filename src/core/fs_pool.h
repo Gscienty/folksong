@@ -9,9 +9,9 @@
 #ifndef _FOLK_SONG_POOL_H_
 #define _FOLK_SONG_POOL_H_
 
+#include "fs_core.h"
 #include <sys/types.h>
 
-typedef struct fs_pool_s fs_pool_t;
 struct fs_pool_s {
 
 };

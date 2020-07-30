@@ -1,6 +1,8 @@
 #include "fs_str.h"
 #include "fs_conf.h"
 #include "fs_mod.h"
+#include "fs_arr.h"
+#include "fs_run.h"
 #include <stdio.h>
 
 int main() {
@@ -9,8 +11,7 @@ int main() {
 
     // init conf
     conf.tokens = fs_alloc_arr(NULL, 3, sizeof(fs_str_t));
-    conf.ctx = fs_alloc_arr(NULL, 32, sizeof(void *));
-    fs_queue_init(&conf.st_mod);
+    fs_run_init(&conf.run, &conf.pool);
 
     fs_mod_init();
 
