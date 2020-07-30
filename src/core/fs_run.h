@@ -11,6 +11,7 @@
 
 #include "fs_core.h"
 #include "fs_queue.h"
+#include "fs_uv.h"
 
 #define FS_RUN_OK   0
 
@@ -27,9 +28,11 @@ struct fs_run_s {
     fs_queue_t  inited;
     fs_uv_t     *uv;
     fs_pool_t   *pool;
+
+    fs_conf_t   *conf;
 };
 
-int fs_run_init(fs_run_t *run, fs_pool_t *pool);
+int fs_run_init(fs_run_t *run, fs_conf_t *conf);
 
 fs_st_mod_t *fs_alloc_st_mod(fs_run_t *run, fs_mod_t *mod);
 
@@ -59,6 +62,9 @@ int fs_run(fs_run_t *run);
 #define fs_run_ctx_push(run)                                \
     (fs_arr_push((run)->ctx))
 
+#define fs_run_tokens(run)                                  \
+    ((run)->conf->tokens)
+
 #define fs_run_st_push(run, mod)                                        \
     ({                                                                  \
         fs_st_mod_t *_st_mod = fs_alloc_st_mod(run, mod);               \
@@ -67,5 +73,8 @@ int fs_run(fs_run_t *run);
             fs_queue_insert_before(&(run)->st_mod, &_st_mod->link)      \
             : NULL;                                                     \
      })
+
+#define fs_run_loop(run)                                                \
+    ((run)->uv->loop)
 
 #endif

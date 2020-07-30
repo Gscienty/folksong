@@ -33,24 +33,29 @@ struct fs_conf_s {
     fs_run_t    *run;
 
     fs_pool_t   pool;
+    bool        valid;
 };
 
 int fs_conf_parse_cmdline(fs_conf_t *conf, fs_str_t *cmdline);
 
 int fs_conf_parse(fs_conf_t *conf, fs_str_t *filename);
 
-#define fs_conf(conf, cmdline)                  \
-    ({                                          \
-        fs_gmod_init();                         \
-        fs_conf_parse_cmdline(conf, cmdline);   \
-        fs_gmod_inited((conf)->run);            \
+#define fs_conf(conf, cmdline)                          \
+    ({                                                  \
+        int _ret;                                       \
+        fs_gmod_init();                                 \
+        _ret = fs_conf_parse_cmdline(conf, cmdline);    \
+        fs_gmod_inited((conf)->run);                    \
+        (conf)->valid = _ret = FS_CONF_OK;              \
      })
 
-#define fs_conf_file(conf, cmdline)             \
-    ({                                          \
-        fs_gmod_init();                         \
-        fs_conf_parse(conf, cmdline);           \
-        fs_gmod_inited((conf)->run);            \
+#define fs_conf_file(conf, cmdline)                     \
+    ({                                                  \
+        int _ret;                                       \
+        fs_gmod_init();                                 \
+        _ret = fs_conf_parse(conf, cmdline);            \
+        fs_gmod_inited((conf)->run);                    \
+        (conf)->valid = _ret = FS_CONF_OK;              \
      })
 
 #endif

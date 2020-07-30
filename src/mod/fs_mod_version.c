@@ -28,8 +28,8 @@ static fs_mod_method_t method = {
 };
 
 fs_mod(1, fs_mod_version, &method,
-       fs_cmd("fs-version",     fs_mod_verison_init,    true,  false),
-       fs_cmd("fs-version-art", fs_mod_version_art,     false, true));
+       fs_block_cmd(fs_str("fs-version"),     fs_mod_verison_init),
+       fs_param_cmd(fs_str("fs-version-art"), fs_mod_version_art));
 
 static int fs_mod_version_init_mod(fs_conf_t *conf, fs_cmd_t *cmd, void **ctx) {
     (void) conf;

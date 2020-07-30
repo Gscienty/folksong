@@ -101,6 +101,7 @@ int fs_conf_parse(fs_conf_t *conf, fs_str_t *filename) {
 
         if (ret != FS_CONF_OK) {
             // TODO echo error
+            goto failure;
         }
     }
 
@@ -339,7 +340,9 @@ static int fs_conf_handle(fs_conf_t *conf, int taken_status) {
         }
 
         if (fs_mod_init_mod_completed(fs_run_st_top_mod(conf->run))) {
-            fs_mod_init_mod_completed(fs_run_st_top_mod(conf->run))(conf->run, fs_run_st_top_ctx(conf->run));
+            if (fs_mod_init_mod_completed(fs_run_st_top_mod(conf->run))(conf->run, fs_run_st_top_ctx(conf->run)) != FS_CONF_OK) {
+                return FS_CONF_ERROR;
+            }
         }
 
         fs_run_st_pop(conf->run);
@@ -368,7 +371,9 @@ static int fs_conf_handle(fs_conf_t *conf, int taken_status) {
                 continue;
             }
 
-            if (fs_cmd_is_child(cmd)) {
+            if (fs_cmd_is_child(cmd) && !fs_cmd_is_block(cmd)) {
+                // someone parameter
+
                 if (fs_run_st_empty(conf->run)) {
                     return FS_CONF_ERROR;
                 }

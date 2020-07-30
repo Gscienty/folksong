@@ -45,7 +45,7 @@ struct fs_cmd_s {
 
 #define fs_cmd(_token, _call, _block, _child)       \
     {                                               \
-        .token  = fs_str(_token),                   \
+        .token  = _token,                           \
         .call   = _call,                            \
         .block  = _block,                           \
         .child  = _child                            \
@@ -53,5 +53,37 @@ struct fs_cmd_s {
 
 #define fs_cmd_equal(cmd, _call)                    \
     ((cmd)->call == (_call))
+
+#define fs_single_cmd(_token, _call)                \
+    {                                               \
+        .token  = _token,                           \
+        .call   = _call,                            \
+        .block  = false,                            \
+        .child  = false                             \
+    }
+
+#define fs_block_cmd(_token, _call)                 \
+    {                                               \
+        .token  = _token,                           \
+        .call   = _call,                            \
+        .block  = true,                             \
+        .child  = false                             \
+    }
+
+#define fs_param_cmd(_token, _call)                 \
+    {                                               \
+        .token  = _token,                           \
+        .call   = _call,                            \
+        .block  = false,                            \
+        .child  = true                              \
+    }
+
+#define fs_subblock_cmd(_token, _call)              \
+    {                                               \
+        .token  = _token,                           \
+        .call   = _call,                            \
+        .block  = true,                             \
+        .child  = true                              \
+    }
 
 #endif
