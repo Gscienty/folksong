@@ -10,7 +10,7 @@
 #include <arpa/inet.h>
 
 int main() {
-    fs_str_t cmdline = fs_str("timer { timeout 1s; repeat 2s;}");
+    fs_str_t cmdline = fs_str("timer { timeout 1s; repeat 2s; exec 'echo \"Hello World\"'; }");
     fs_conf_t conf;
 
     // init conf

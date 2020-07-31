@@ -6,6 +6,7 @@
  *
  */
 
+#include "fs_core.h"
 #include <uv.h>
 #include <sys/types.h>
 #include <stdbool.h>
@@ -18,8 +19,8 @@ struct fs_mod_timer_s {
     uint64_t    repeat;
 
     struct {
-        void *ctx;
-        int (*call) (void *ctx);
+        void    *ctx;
+        int     (*call) (void *ctx);
     } cb;
 
     bool        timeout_flag:1;
@@ -27,5 +28,3 @@ struct fs_mod_timer_s {
     bool        repeat_always:1;
     bool        cb_flag:1;
 };
-
-int fs_mod_timer_set_cb(fs_mod_timer_t *timer, int (*call) (void *ctx), void *ctx);

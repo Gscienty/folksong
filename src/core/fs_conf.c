@@ -94,6 +94,8 @@ int fs_conf_parse(fs_conf_t *conf, fs_str_t *filename) {
             if (status == FS_PARSE_BLOCK) {
                 goto failure;
             }
+
+            ret = FS_CONF_OK;
             goto done;
         }
 
@@ -340,7 +342,7 @@ static int fs_conf_handle(fs_conf_t *conf, int taken_status) {
         }
 
         if (fs_mod_init_mod_completed(fs_run_st_top_mod(conf->run))) {
-            if (fs_mod_init_mod_completed(fs_run_st_top_mod(conf->run))(conf->run, fs_run_st_top_ctx(conf->run)) != FS_CONF_OK) {
+            if (fs_mod_init_mod_completed(fs_run_st_top_mod(conf->run))(conf->run, *fs_run_st_top_ctx(conf->run)) != FS_CONF_OK) {
                 return FS_CONF_ERROR;
             }
         }

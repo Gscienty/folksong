@@ -161,33 +161,32 @@ static int fs_mod_timer_parse_time(uint64_t *ret, fs_str_t *time) {
     if (!*sp) {
         *ret = atoll(fs_str_get(time));
     }
+    else if (strcmp(sp, "ms") == 0) {
+        *sp = 0;
+        *ret = atoll(fs_str_get(time));
+        *sp = 'm';
+    }
+    else if (strcmp(sp, "s") == 0) {
+        *sp = 0;
+        *ret = atoll(fs_str_get(time)) * 1000;
+        *sp = 's';
+    }
+    else if (strcmp(sp, "min") == 0) {
+        *sp = 0;
+        *ret = atoll(fs_str_get(time)) * 1000 * 60;
+        *sp = 'm';
+    }
+    else if (strcmp(sp, "hour") == 0) {
+        *sp = 0;
+        *ret = atoll(fs_str_get(time)) * 1000 * 60 * 60;
+        *sp = 'h';
+    }
+    else if (strcmp(sp, "day") == 0) {
+        *sp = 0;
+        *ret = atoll(fs_str_get(time)) * 1000 * 60 * 60 * 24;
+        *sp = 'd';
+    }
     else {
-        if (strcmp(sp, "ms") == 0) {
-            *sp = 0;
-            *ret = atoll(fs_str_get(time));
-            *sp = 'm';
-        }
-        else if (strcmp(sp, "s") == 0) {
-            *sp = 0;
-            *ret = atoll(fs_str_get(time)) * 1000;
-            *sp = 's';
-        }
-        else if (strcmp(sp, "min") == 0) {
-            *sp = 0;
-            *ret = atoll(fs_str_get(time)) * 1000 * 60;
-            *sp = 'm';
-        }
-        else if (strcmp(sp, "hour") == 0) {
-            *sp = 0;
-            *ret = atoll(fs_str_get(time)) * 1000 * 60 * 60;
-            *sp = 'h';
-        }
-        else if (strcmp(sp, "day") == 0) {
-            *sp = 0;
-            *ret = atoll(fs_str_get(time)) * 1000 * 60 * 60 * 24;
-            *sp = 'd';
-        }
-
         return FS_CONF_ERROR;
     }
 
@@ -203,11 +202,4 @@ static void fs_mod_timer_cb(uv_timer_t *handler) {
     fs_mod_timer_t *timer = fs_mod_timer_reflect(handler);
 
     ret = timer->cb.call(timer->cb.ctx);
-}
-
-int fs_mod_timer_set_cb(fs_mod_timer_t *timer, int (*call) (void *ctx), void *ctx) {
-    timer->cb.call = call;
-    timer->cb.ctx = ctx;
-
-    return FS_CONF_OK;
 }

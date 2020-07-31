@@ -46,7 +46,7 @@ int fs_conf_parse(fs_conf_t *conf, fs_str_t *filename);
         fs_gmod_init();                                 \
         _ret = fs_conf_parse_cmdline(conf, cmdline);    \
         fs_gmod_inited((conf)->run);                    \
-        (conf)->valid = _ret = FS_CONF_OK;              \
+        (conf)->valid = _ret == FS_CONF_OK;             \
      })
 
 #define fs_conf_file(conf, cmdline)                     \
@@ -55,7 +55,7 @@ int fs_conf_parse(fs_conf_t *conf, fs_str_t *filename);
         fs_gmod_init();                                 \
         _ret = fs_conf_parse(conf, cmdline);            \
         fs_gmod_inited((conf)->run);                    \
-        (conf)->valid = _ret = FS_CONF_OK;              \
+        (conf)->valid = _ret == FS_CONF_OK;             \
      })
 
 #endif
