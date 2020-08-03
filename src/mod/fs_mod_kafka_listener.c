@@ -31,6 +31,9 @@ struct fs_mod_kafka_listener_proc_handler_s {
     rd_kafka_message_t      *rkm;
 
     fs_log_t                *log;
+
+    char                    key_param[128];
+    char                    *args[64];
 };
 
 static int fs_mod_kafka_listener_init_mod(fs_conf_t *conf, fs_cmd_t *cmd, void **ctx);
@@ -187,6 +190,7 @@ static void fs_mod_kafka_listener_poll_cb(uv_poll_t *handler, int status, int ev
     fs_mod_kafka_listener_proc_handler_t *proc;
     char unuse;
     int ret;
+    int i;
 
     (void) status;
     (void) events;
@@ -213,22 +217,35 @@ static void fs_mod_kafka_listener_poll_cb(uv_poll_t *handler, int status, int ev
         proc->rkm = rkm;
 
         proc->options = listener->proc_options;
+        proc->options.args = proc->args;
         proc->options.stdio_count = 3;
         proc->options.stdio = proc->stdio;
         proc->options.exit_cb = fs_mod_kafka_listener_proc_exited_cb;
 
         proc->stdio[0].flags = UV_CREATE_PIPE | UV_READABLE_PIPE;
         proc->stdio[1].flags = UV_CREATE_PIPE | UV_WRITABLE_PIPE;
-        proc->stdio[2].flags = UV_IGNORE;
+        proc->stdio[2].flags = UV_INHERIT_FD;
 
         uv_pipe_init(listener->loop, &proc->in, true);
         uv_pipe_init(listener->loop, &proc->out, true);
 
         proc->stdio[0].data.stream = (uv_stream_t *) &proc->in;
         proc->stdio[1].data.stream = (uv_stream_t *) &proc->out;
+        proc->stdio[2].data.fd = 2;
 
-        /*proc->stdio[1].flags = UV_INHERIT_FD;*/
-        /*proc->stdio[1].data.fd = 1;*/
+        for (i = 0; listener->proc_options.args[i]; i++) {
+            if (strcmp("$kafka_topic", listener->proc_options.args[i]) == 0) {
+                proc->options.args[i] = (char *) rd_kafka_topic_name(rkm->rkt);
+            }
+            else if (strcmp("$kafka_key", listener->proc_options.args[i]) == 0) {
+                sprintf(proc->key_param, "%.*s", (int) rkm->key_len, (char *) rkm->key);
+                proc->options.args[i] = proc->key_param;
+            }
+            else {
+                proc->options.args[i] = listener->proc_options.args[i];
+            }
+        }
+        proc->options.args[i] = NULL;
 
         uv_buf_t writed[] = {
             { .base = rkm->payload, .len = rkm->len }
@@ -272,9 +289,9 @@ static void fs_mod_kafka_listener_proc_exited_cb(uv_process_t *handle, int64_t e
     fs_log_info(proc->log, "fs_mod_kafka: proc exited, status: %ld, term_signal: %d", exit_status, term_signal);
     fs_log_dbg(proc->log, "fs_mod_kafka: proc output: size: %ld", proc->readed_len);
 
-    printf("%.*s\n", (int) proc->read_buf.len, (char *) proc->read_buf.base);
-
-    free(proc->read_buf.base);
+    if (proc->read_buf.base) {
+        free(proc->read_buf.base);
+    }
     free(proc);
 }
 

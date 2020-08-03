@@ -52,7 +52,7 @@ int fs_conf_parse(fs_conf_t *conf, fs_str_t *filename) {
 
     if (filename) {
         if((fd = fs_file_open(fs_str_get(filename), FS_FILE_RDONLY, FS_FILE_OPEN, 0)) == FS_INVALID_FILE) {
-            // log
+            fs_log_err(&conf->log, "fs_conf: open file failed, %d", FS_INVALID_FILE);
             return FS_CONF_ERROR;
         }
 
@@ -62,11 +62,11 @@ int fs_conf_parse(fs_conf_t *conf, fs_str_t *filename) {
         conf->file->fd = fd;
         fs_file_off(conf->file) = 0;
         if (fs_file_info(fd, fs_file_info_get(conf->file)) == FS_INVALID_FILE) {
-            // log
+            fs_log_err(&conf->log, "fs_conf: open file failed, %d", FS_INVALID_FILE);
         }
 
         if (fs_buf_alloc(&buf, FS_CONF_PAYLOAD_BUFFER_SIZE) != 0) {
-            // log
+            fs_log_err(&conf->log, "fs_conf: allo failed, %d", FS_INVALID_FILE);
             goto failure;
         }
         buf.pos = buf.last;
@@ -89,11 +89,13 @@ int fs_conf_parse(fs_conf_t *conf, fs_str_t *filename) {
         ret = fs_conf_next_token(conf);
 
         if (ret == FS_CONF_ERROR) {
+            fs_conf_parse_errlog(conf);
             goto done;
         }
 
         if (ret == FS_CONF_FILE_DONE) {
             if (status == FS_PARSE_BLOCK) {
+                fs_conf_parse_errlog(conf);
                 goto failure;
             }
 
