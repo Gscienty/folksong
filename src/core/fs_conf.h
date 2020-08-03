@@ -12,6 +12,7 @@
 #include "fs_core.h"
 #include "fs_run.h"
 #include "fs_mod.h"
+#include "fs_log.h"
 #include "fs_pool.h"
 
 #define FS_CONF_FILE_DONE   -10001
@@ -34,6 +35,8 @@ struct fs_conf_s {
 
     fs_pool_t   pool;
     bool        valid;
+
+    fs_log_t    log;
 };
 
 int fs_conf_parse_cmdline(fs_conf_t *conf, fs_str_t *cmdline);
@@ -45,8 +48,10 @@ int fs_conf_parse(fs_conf_t *conf, fs_str_t *filename);
         int _ret;                                       \
         fs_gmod_init();                                 \
         _ret = fs_conf_parse_cmdline(conf, cmdline);    \
-        fs_gmod_inited((conf)->run);                    \
-        (conf)->valid = _ret == FS_CONF_OK;             \
+        if (_ret == FS_CONF_OK) {                       \
+            fs_gmod_inited((conf)->run);                \
+            (conf)->valid = _ret == FS_CONF_OK;         \
+        }                                               \
      })
 
 #define fs_conf_file(conf, cmdline)                     \
@@ -54,8 +59,10 @@ int fs_conf_parse(fs_conf_t *conf, fs_str_t *filename);
         int _ret;                                       \
         fs_gmod_init();                                 \
         _ret = fs_conf_parse(conf, cmdline);            \
-        fs_gmod_inited((conf)->run);                    \
-        (conf)->valid = _ret == FS_CONF_OK;             \
+        if (_ret == FS_CONF_OK) {                       \
+            fs_gmod_inited((conf)->run);                \
+            (conf)->valid = _ret == FS_CONF_OK;         \
+        }                                               \
      })
 
 #endif

@@ -22,6 +22,7 @@ typedef struct fs_run_s fs_run_t;
 typedef struct fs_st_mod_s fs_st_mod_t;
 typedef struct fs_qe_inited_s fs_qe_inited_t;
 typedef struct fs_uv_s fs_uv_t;
+typedef struct fs_log_s fs_log_t;
 
 typedef int fs_fd_t;
 

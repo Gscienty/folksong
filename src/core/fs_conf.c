@@ -18,6 +18,7 @@
 
 static int fs_conf_next_token(fs_conf_t *conf);
 static int fs_conf_handle(fs_conf_t *conf, int taken_status);
+static int fs_conf_parse_errlog(fs_conf_t *conf);
 
 int fs_conf_parse_cmdline(fs_conf_t *conf, fs_str_t *cmdline) {
     int ret;
@@ -38,7 +39,7 @@ int fs_conf_parse_cmdline(fs_conf_t *conf, fs_str_t *cmdline) {
 
     conf->file = NULL;
 
-    return FS_CONF_OK;
+    return ret;
 }
 
 int fs_conf_parse(fs_conf_t *conf, fs_str_t *filename) {
@@ -70,7 +71,6 @@ int fs_conf_parse(fs_conf_t *conf, fs_str_t *filename) {
         }
         buf.pos = buf.last;
 
-        conf->file->line = 1;
         conf->file->buf = buf;
         conf->file->name = *filename;
 
@@ -82,6 +82,8 @@ int fs_conf_parse(fs_conf_t *conf, fs_str_t *filename) {
     else {
         status = FS_PARSE_PARAM;
     }
+
+    conf->file->line = 1;
 
     for ( ;; ) {
         ret = fs_conf_next_token(conf);
@@ -102,7 +104,7 @@ int fs_conf_parse(fs_conf_t *conf, fs_str_t *filename) {
         ret = fs_conf_handle(conf, ret);
 
         if (ret != FS_CONF_OK) {
-            // TODO echo error
+            fs_conf_parse_errlog(conf);
             goto failure;
         }
     }
@@ -139,7 +141,7 @@ static int fs_conf_next_token(fs_conf_t *conf) {
     bool found_token = false;
 
     fs_str_t *token;
-    // TODO release co->tokens's str
+    // note: not release co->tokens's str
     fs_arr_count(conf->tokens) = 0;
 
     void *token_start = NULL;
@@ -433,3 +435,14 @@ static int fs_conf_handle(fs_conf_t *conf, int taken_status) {
     return FS_CONF_ERROR;
 }
 
+static int fs_conf_parse_errlog(fs_conf_t *conf) {
+    int i;
+
+    fs_log_err(&conf->log, "folksong parse conf failed, line: %d\n", conf->file->line);
+
+    for (i = 0; i < conf->tokens->ele_count; i++) {
+        printf("%s ", fs_str_get(fs_arr_nth(fs_str_t, conf->tokens, i)));
+    }
+
+    printf("\n");
+}

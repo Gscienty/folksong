@@ -10,7 +10,7 @@
 #include <arpa/inet.h>
 
 int main() {
-    fs_str_t cmdline = fs_str("timer { timeout 1s; repeat 2s; exec 'echo \"Hello World\"'; }");
+    fs_str_t cmdline = fs_str("kafka_listener {\n kafka_config bootstrap.servers 127.0.0.1:9092; \nkafka_config group.id rand; \nkafka_topic test; \nexec /bin/python3 /root/proj/folksong/scripts/recv.py; \n}");
     fs_conf_t conf;
 
     // init conf
@@ -22,9 +22,11 @@ int main() {
     fs_conf(&conf, &cmdline);
 
     if (!conf.valid) {
+        printf("ERR\n");
         return -1;
     }
 
+    printf("SUCC\n");
     fs_run(&run);
 
     return 0;

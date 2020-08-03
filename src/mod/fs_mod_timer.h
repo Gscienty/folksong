@@ -13,18 +13,15 @@
 
 typedef struct fs_mod_timer_s fs_mod_timer_t;
 struct fs_mod_timer_s {
-    uv_timer_t  handler;
+    uv_timer_t              handler;
 
-    uint64_t    timeout;
-    uint64_t    repeat;
+    uint64_t                timeout;
+    uint64_t                repeat;
 
-    struct {
-        void    *ctx;
-        int     (*call) (void *ctx);
-    } cb;
+    uv_process_options_t    proc_options;
 
-    bool        timeout_flag:1;
-    bool        repeat_flag:1;
-    bool        repeat_always:1;
-    bool        cb_flag:1;
+    bool                    timeout_flag:1;
+    bool                    repeat_flag:1;
+    bool                    repeat_always:1;
+    bool                    cb_flag:1;
 };

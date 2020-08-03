@@ -196,10 +196,22 @@ static int fs_mod_timer_parse_time(uint64_t *ret, fs_str_t *time) {
 #define fs_mod_timer_reflect(_handler)                                                              \
     ((fs_mod_timer_t *) (((void *) (_handler)) - ((void *) &((fs_mod_timer_t *) 0)->handler)))
 
+uv_process_t proc;
 static void fs_mod_timer_cb(uv_timer_t *handler) {
-    int ret;
-
     fs_mod_timer_t *timer = fs_mod_timer_reflect(handler);
 
-    ret = timer->cb.call(timer->cb.ctx);
+    uv_stdio_container_t stdio[3];
+    stdio[0].flags = UV_IGNORE;
+    stdio[1].flags = UV_INHERIT_FD;
+    stdio[1].data.fd = 1;
+    stdio[2].flags = UV_IGNORE;
+
+    timer->proc_options.stdio_count = 3;
+    timer->proc_options.stdio = stdio;
+
+    timer->proc_options.exit_cb = NULL;
+
+    uv_spawn(handler->loop, &proc, &timer->proc_options);
+
+    uv_unref((uv_handle_t *) &proc);
 }
