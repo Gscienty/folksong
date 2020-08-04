@@ -1,7 +1,7 @@
-# Folksong
+# Folksong I/O代理服务
 
-Folksong是一个基于libuv实现的模块化I/O处理框架，是一种Sidecar模式下的服务网关。
-Folksong允许向应用无侵入地添加多种功能，避免了为了使用第三方组件而向应用添加额外代码，使应用代码更专注于业务逻辑的实现。
+Folksong是一个基于libuv实现的模块化I/O处理服务，是一种以Sidecar模式构建的服务网关。
+Folksong允许向应用无侵入地添加多种I/O功能，避免了为了使用第三方组件而向应用添加额外代码，使应用代码更专注于业务逻辑的实现。
 
 ## Kafka 消费者代理
 
@@ -28,5 +28,45 @@ kafka {
     }
 
 
+}
+```
+
+## Timer 时钟触发器
+
+该模块主要对libuv中`uv_timer_t`进行封装，可在此基础上实现心跳机制，该模块主要目标是对接Prometheus的监控定时推送任务。配置样例如下：
+
+```
+timer {
+    # 当Folksong启动后的多久后触发时钟触发器
+    timeout 1s;
+
+    # 轮询多少时间后触发时钟触发器
+    repeat 15s;
+
+    # 时钟触发器触发执行的脚本
+    echo /bin/sh -c "echo 'knock knock.'";
+}
+```
+
+### kafka 生产者代理
+
+该模块主要实现Kafka生产者角色的消息发送过程的代理。Folksong对Kafka的发送过程进行封装，业务代码将以HTTP协议的方式发送给Folksong，
+再由Folksong转换为Kafka消息投递到Kafka队列中。
+```
+http {
+    # Folksong对内暴露的IP和接口
+    host 127.0.0.1;
+    port 10010;
+
+    # http模块本身支持Route（现阶段较弱）
+    # 设定Kafka推送接口 HTTP Request Path前缀
+    kafka /publish/ {
+
+        # 指定Kafka broker
+        config bootstrap.servers 127.0.0.1:9092;
+        # 指定Kafka Producer所在的group id
+        config group.id temp-group;
+
+    }
 }
 ```
