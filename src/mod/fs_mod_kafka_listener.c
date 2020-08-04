@@ -9,9 +9,38 @@
 #include "fs_mod.h"
 #include "fs_conf.h"
 #include "fs_arr.h"
-#include "fs_mod_kafka_listener.h"
+#include "fs_util.h"
+#include <librdkafka/rdkafka.h>
 #include <malloc.h>
 #include <unistd.h>
+
+typedef struct fs_mod_kafka_listener_s fs_mod_kafka_listener_t;
+struct fs_mod_kafka_listener_s {
+    fs_arr_t                *topic;
+
+    rd_kafka_conf_t         *conf;
+    rd_kafka_t              *rk;
+    rd_kafka_queue_t        *queue;
+
+    int                     fds[2];
+    uv_poll_t               handler;
+
+    char                    errstr[512];
+
+    uv_loop_t               *loop;
+    fs_log_t                *log;
+};
+
+typedef struct fs_mod_kafka_listener_topic_s fs_mod_kafka_listener_topic_t;
+struct fs_mod_kafka_listener_topic_s {
+    fs_str_t                 topic;
+
+    uv_process_options_t    proc_options;
+    bool                    proc_flag;
+
+    uv_loop_t               *loop;
+    fs_log_t                *log;
+};
 
 typedef struct fs_mod_kafka_listener_proc_handler_s fs_mod_kafka_listener_proc_handler_t;
 struct fs_mod_kafka_listener_proc_handler_s {
@@ -49,6 +78,7 @@ static fs_mod_method_t method = {
 static int fs_mod_kafka_listener_block(fs_run_t *run, void *ctx);
 static int fs_mod_kafka_listener_cmd_topic(fs_run_t *run, void *ctx);
 static int fs_mod_kafka_listener_cmd_config(fs_run_t *run, void *ctx);
+static int fs_mod_kafka_listener_cmd_exec(fs_run_t *run, void *ctx);
 
 static void fs_mod_kafka_listener_poll_cb(uv_poll_t *handler, int status, int events);
 static void fs_mod_kafka_listener_proc_writed_cb(uv_write_t *req, int status);
@@ -58,14 +88,15 @@ static void fs_mod_kafka_listener_proc_read_alloc_cb(uv_handle_t *handle, size_t
 static void fs_mod_kafka_listener_proc_readed_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf);
 
 fs_mod(1, fs_mod_kafka_listener, &method,
-       fs_block_cmd(fs_str("kafka_listener"), fs_mod_kafka_listener_block),
-       fs_param_cmd(fs_str("kafka_topic"),    fs_mod_kafka_listener_cmd_topic),
-       fs_param_cmd(fs_str("kafka_config"),   fs_mod_kafka_listener_cmd_config));
+       fs_block_cmd     (fs_str("kafka"),    fs_mod_kafka_listener_block),
+       fs_param_cmd     (fs_str("config"),   fs_mod_kafka_listener_cmd_config),
+       fs_subblock_cmd  (fs_str("topic"),    fs_mod_kafka_listener_cmd_topic),
+       fs_param_cmd     (fs_str("exec"),     fs_mod_kafka_listener_cmd_exec));
 
 static int fs_mod_kafka_listener_init_mod(fs_conf_t *conf, fs_cmd_t *cmd, void **ctx) {
     fs_mod_kafka_listener_t *listener;
     if (!fs_cmd_equal(cmd, fs_mod_kafka_listener_block)) {
-        return FS_CONF_ERROR;
+        return FS_CONF_PASS;
     }
     *ctx = fs_pool_alloc(&conf->pool, sizeof(fs_mod_kafka_listener_t));
     listener = *ctx;
@@ -73,8 +104,6 @@ static int fs_mod_kafka_listener_init_mod(fs_conf_t *conf, fs_cmd_t *cmd, void *
     listener->topic = NULL;
     listener->rk = NULL;
     listener->conf = rd_kafka_conf_new();
-
-    listener->proc_flag = false;
 
     listener->log = &conf->log;
 
@@ -85,12 +114,21 @@ static int fs_mod_kafka_listener_init_mod_completed(fs_run_t *run, void *ctx) {
     (void) run;
 
     fs_mod_kafka_listener_t *listener = ctx;
+    fs_mod_kafka_listener_topic_t *topic;
 
     rd_kafka_topic_partition_list_t *subscriptions;
     int i;
 
-    if (listener->topic == NULL || !listener->proc_flag) {
+    if (listener->topic == NULL) {
         return FS_CONF_ERROR;
+    }
+
+    for (i = 0; i < listener->topic->ele_count; i++) {
+        topic = fs_arr_nth(fs_mod_kafka_listener_topic_t, listener->topic, i);
+
+        if (!topic->proc_flag) {
+            return FS_CONF_ERROR;
+        }
     }
 
     listener->rk = rd_kafka_new(RD_KAFKA_CONSUMER, listener->conf, listener->errstr, sizeof(listener->errstr));
@@ -100,9 +138,11 @@ static int fs_mod_kafka_listener_init_mod_completed(fs_run_t *run, void *ctx) {
 
     subscriptions = rd_kafka_topic_partition_list_new(listener->topic->ele_count);
     for (i = 0; i < listener->topic->ele_count; i++) {
-        rd_kafka_topic_partition_list_add(subscriptions,
-                                          fs_str_get(fs_arr_nth(fs_str_t, listener->topic, i)),
-                                          RD_KAFKA_PARTITION_UA);
+        topic = fs_arr_nth(fs_mod_kafka_listener_topic_t, listener->topic, i);
+
+        fs_log_dbg(listener->log, "fs_mod_kafka: listen topic: %s", fs_str_get(&topic->topic));
+
+        rd_kafka_topic_partition_list_add(subscriptions, fs_str_get(&topic->topic), RD_KAFKA_PARTITION_UA);
     }
 
     if (rd_kafka_subscribe(listener->rk, subscriptions)) {
@@ -125,6 +165,8 @@ static int fs_mod_kafka_listener_inited(fs_run_t *run, fs_arr_t *ctxs) {
     for (i = 0; i < ctxs->ele_count; i++) {
         listener = *fs_arr_nth(void *, ctxs, i);
 
+        fs_log_dbg(listener->log, "fs_mod_kafka: listening, nth: %d", i + 1);
+
         listener->queue = rd_kafka_queue_get_consumer(listener->rk);
 
         pipe(listener->fds);
@@ -146,25 +188,40 @@ static int fs_mod_kafka_listener_block(fs_run_t *run, void *ctx) {
 }
 
 static int fs_mod_kafka_listener_cmd_topic(fs_run_t *run, void *ctx) {
-    fs_mod_kafka_listener_t *listener = ctx;
-
-    int i;
-
-    if (fs_run_tokens(run)->ele_count == 1) {
+    if (fs_run_st_top_mod(run) != &fs_mod_kafka_listener) {
+        return FS_CONF_PASS;
+    }
+    if (!fs_cmd_equal(fs_run_st_top_cmd(run), fs_mod_kafka_listener_block)) {
         return FS_CONF_ERROR;
     }
-    if (listener->topic == NULL) {
-        listener->topic = fs_alloc_arr(run->pool, fs_run_tokens(run)->ele_count - 1, sizeof(fs_str_t));
+
+    fs_mod_kafka_listener_t *listener = ctx;
+
+    if (fs_run_tokens(run)->ele_count != 2) {
+        return FS_CONF_ERROR;
     }
 
-    for (i = 1; i < fs_run_tokens(run)->ele_count; i++) {
-        *(fs_str_t *) fs_arr_push(listener->topic) = *fs_arr_nth(fs_str_t, fs_run_tokens(run), i);
+    if (listener->topic == NULL) {
+        listener->topic = fs_alloc_arr(run->pool, 1, sizeof(fs_mod_kafka_listener_topic_t));
     }
+
+    fs_mod_kafka_listener_topic_t *topic = fs_arr_push(listener->topic);
+    topic->topic        = *fs_arr_nth(fs_str_t, fs_run_tokens(run), 1);
+    topic->log          = listener->log;
+    topic->loop         = listener->loop;
+    topic->proc_flag    = false;
 
     return FS_CONF_OK;
 }
 
 static int fs_mod_kafka_listener_cmd_config(fs_run_t *run, void *ctx) {
+    if (fs_run_st_top_mod(run) != &fs_mod_kafka_listener) {
+        return FS_CONF_PASS;
+    }
+    if (!fs_cmd_equal(fs_run_st_top_cmd(run), &fs_mod_kafka_listener_block)) {
+        return FS_CONF_PASS;
+    }
+
     fs_mod_kafka_listener_t *listener = ctx;
 
     if (fs_run_tokens(run)->ele_count != 3) {
@@ -178,6 +235,39 @@ static int fs_mod_kafka_listener_cmd_config(fs_run_t *run, void *ctx) {
         return FS_CONF_ERROR;
     }
 
+    fs_log_dbg(listener->log, "fs_mod_kafka: set config: %s - %s", 
+               fs_str_get(fs_arr_nth(fs_str_t, fs_run_tokens(run), 1)),
+               fs_str_get(fs_arr_nth(fs_str_t, fs_run_tokens(run), 2)));
+
+    return FS_CONF_OK;
+}
+
+static int fs_mod_kafka_listener_cmd_exec(fs_run_t *run, void *ctx) {
+    if (fs_run_st_top_mod(run) != &fs_mod_kafka_listener) {
+        return FS_CONF_PASS;
+    }
+    if (!fs_cmd_equal(fs_run_st_subtop_cmd(run), fs_mod_kafka_listener_block)) {
+        return FS_CONF_ERROR;
+    }
+
+    fs_mod_kafka_listener_t *listener = ctx;
+    fs_mod_kafka_listener_topic_t *topic;
+    int i;
+    char **args = fs_pool_alloc(run->pool, sizeof(char *) * fs_arr_count(fs_run_tokens(run)));
+
+    topic = fs_arr_last(fs_mod_kafka_listener_topic_t, listener->topic);
+    topic->proc_options.file    = fs_str_get(fs_arr_nth(fs_str_t, fs_run_tokens(run), 1));
+    topic->proc_options.args    = args;
+    topic->proc_options.flags   = UV_PROCESS_DETACHED;
+    topic->proc_options.env     = NULL;
+
+    for (i = 1; i < fs_arr_count(fs_run_tokens(run)); i++) {
+        args[i - 1] = fs_str_get(fs_arr_nth(fs_str_t, fs_run_tokens(run), i));
+    }
+    args[i] = NULL;
+
+    topic->proc_flag = true;
+
     return FS_CONF_OK;
 }
 
@@ -188,6 +278,9 @@ static int fs_mod_kafka_listener_cmd_config(fs_run_t *run, void *ctx) {
 static void fs_mod_kafka_listener_poll_cb(uv_poll_t *handler, int status, int events) {
     fs_mod_kafka_listener_t *listener = fs_mod_kafka_reflect(handler);
     fs_mod_kafka_listener_proc_handler_t *proc;
+    fs_mod_kafka_listener_topic_t *topic;
+    fs_mod_kafka_listener_topic_t *tmp_topic;
+    fs_str_t rkm_topic;
     char unuse;
     int ret;
     int i;
@@ -204,6 +297,25 @@ static void fs_mod_kafka_listener_poll_cb(uv_poll_t *handler, int status, int ev
             break;
         }
 
+        topic = NULL;
+        fs_str_set(&rkm_topic, (const char *) rd_kafka_topic_name(rkm->rkt));
+
+        fs_log_dbg(listener->log, "fs_mod_kafka: received message, topic: %s", fs_str_get(&rkm_topic));
+
+        for (i = 0; i < listener->topic->ele_count; i++) {
+            tmp_topic = fs_arr_nth(fs_mod_kafka_listener_topic_t, listener->topic, i);
+
+            if (fs_str_cmp(&tmp_topic->topic, &rkm_topic) == 0) {
+                topic = tmp_topic;
+                break;
+            }
+        }
+
+        if (topic == NULL) {
+            rd_kafka_message_destroy(rkm);
+            continue;
+        }
+
         proc = malloc(sizeof(fs_mod_kafka_listener_proc_handler_t));
         if (proc == NULL) {
             rd_kafka_message_destroy(rkm);
@@ -216,7 +328,7 @@ static void fs_mod_kafka_listener_poll_cb(uv_poll_t *handler, int status, int ev
         proc->log = listener->log;
         proc->rkm = rkm;
 
-        proc->options = listener->proc_options;
+        proc->options = topic->proc_options;
         proc->options.args = proc->args;
         proc->options.stdio_count = 3;
         proc->options.stdio = proc->stdio;
@@ -233,16 +345,16 @@ static void fs_mod_kafka_listener_poll_cb(uv_poll_t *handler, int status, int ev
         proc->stdio[1].data.stream = (uv_stream_t *) &proc->out;
         proc->stdio[2].data.fd = 2;
 
-        for (i = 0; listener->proc_options.args[i]; i++) {
-            if (strcmp("$kafka_topic", listener->proc_options.args[i]) == 0) {
+        for (i = 0; topic->proc_options.args[i]; i++) {
+            if (strcmp("$kafka_topic", topic->proc_options.args[i]) == 0) {
                 proc->options.args[i] = (char *) rd_kafka_topic_name(rkm->rkt);
             }
-            else if (strcmp("$kafka_key", listener->proc_options.args[i]) == 0) {
+            else if (strcmp("$kafka_key", topic->proc_options.args[i]) == 0) {
                 sprintf(proc->key_param, "%.*s", (int) rkm->key_len, (char *) rkm->key);
                 proc->options.args[i] = proc->key_param;
             }
             else {
-                proc->options.args[i] = listener->proc_options.args[i];
+                proc->options.args[i] = topic->proc_options.args[i];
             }
         }
         proc->options.args[i] = NULL;
@@ -308,7 +420,7 @@ static void fs_mod_kafka_listener_proc_read_alloc_cb(uv_handle_t *_handler, size
 
     if (proc->read_buf.base == NULL) {
         proc->read_buf.base = malloc(suggested_size);
-        proc->read_buf.len = suggested_size;
+        proc->read_buf.len  = suggested_size;
 
         *buf = proc->read_buf;
     }

@@ -30,7 +30,7 @@ int fs_run_init(fs_run_t *run, fs_conf_t *conf) {
     return FS_RUN_OK;
 }
 
-fs_st_mod_t *fs_alloc_st_mod(fs_run_t *run, fs_mod_t *mod) {
+fs_st_mod_t *fs_alloc_st_mod(fs_run_t *run, fs_mod_t *mod, fs_cmd_t *cmd) {
     fs_st_mod_t *st_mod;
     if ((st_mod = fs_pool_alloc(run->pool, sizeof(fs_st_mod_t))) == NULL) {
         return NULL;
@@ -38,6 +38,7 @@ fs_st_mod_t *fs_alloc_st_mod(fs_run_t *run, fs_mod_t *mod) {
 
     fs_queue_init(&st_mod->link);
     st_mod->mod = mod;
+    st_mod->cmd = cmd;
 
     return st_mod;
 }

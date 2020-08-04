@@ -23,24 +23,26 @@ static fs_mod_method_t method = {
     .inited             = fs_mod_timer_inited
 };
 
-static int fs_mod_timer_cmd(fs_run_t *run, void *ctx);
+static int fs_mod_timer_block(fs_run_t *run, void *ctx);
 static int fs_mod_timer_cmd_timeout(fs_run_t *run, void *ctx);
 static int fs_mod_timer_cmd_repeat(fs_run_t *run, void *ctx);
+static int fs_mod_timer_cmd_exec(fs_run_t *run, void *ctx);
 static int fs_mod_timer_parse_time(uint64_t *ret, fs_str_t *time);
 
 static void fs_mod_timer_cb(uv_timer_t *handler);
 
 fs_mod(1, fs_mod_timer, &method,
-       fs_block_cmd(fs_str("timer"),    fs_mod_timer_cmd),
+       fs_block_cmd(fs_str("timer"),    fs_mod_timer_block),
        fs_param_cmd(fs_str("timeout"),  fs_mod_timer_cmd_timeout),
-       fs_param_cmd(fs_str("repeat"),   fs_mod_timer_cmd_repeat));
+       fs_param_cmd(fs_str("repeat"),   fs_mod_timer_cmd_repeat),
+       fs_param_cmd(fs_str("exec"),     fs_mod_timer_cmd_exec));
 
 static int fs_mod_timer_init(fs_mod_timer_t *timer);
 
 static int fs_mod_timer_init_mod(fs_conf_t *conf, fs_cmd_t *cmd, void **ctx) {
     (void) conf;
 
-    if (fs_cmd_equal(cmd, fs_mod_timer_cmd)) {
+    if (fs_cmd_equal(cmd, fs_mod_timer_block)) {
         *ctx = fs_pool_alloc(&conf->pool, sizeof(fs_mod_timer_t));
 
         fs_mod_timer_init(*ctx);
@@ -93,7 +95,7 @@ static int fs_mod_timer_init(fs_mod_timer_t *timer) {
     return FS_CONF_OK;
 }
 
-static int fs_mod_timer_cmd(fs_run_t *run, void *ctx) {
+static int fs_mod_timer_block(fs_run_t *run, void *ctx) {
     (void) ctx;
 
     if (fs_run_tokens(run)->ele_count == 1) {
@@ -107,7 +109,7 @@ static int fs_mod_timer_cmd_timeout(fs_run_t *run, void *ctx) {
     fs_mod_timer_t *timer = ctx;
 
     if (fs_run_st_top_mod(run) != &fs_mod_timer) {
-        return FS_CONF_ERROR;
+        return FS_CONF_PASS;
     }
 
     if (timer->timeout_flag) {
@@ -130,7 +132,7 @@ static int fs_mod_timer_cmd_repeat(fs_run_t *run, void *ctx) {
     fs_mod_timer_t *timer = ctx;
 
     if (fs_run_st_top_mod(run) != &fs_mod_timer) {
-        return FS_CONF_ERROR;
+        return FS_CONF_PASS;
     }
 
     if (timer->repeat_flag) {
@@ -145,6 +147,30 @@ static int fs_mod_timer_cmd_repeat(fs_run_t *run, void *ctx) {
         return FS_CONF_ERROR;
     }
     timer->repeat_flag = true;
+
+    return FS_CONF_OK;
+}
+
+static int fs_mod_timer_cmd_exec(fs_run_t *run, void *ctx) {
+    if (fs_run_st_top_mod(run) != &fs_mod_timer) {
+        return FS_CONF_PASS;
+    }
+    fs_mod_timer_t *timer = ctx;
+    char **args = fs_pool_alloc(run->pool, sizeof(char *) * fs_arr_count(fs_run_tokens(run)));
+    int i;
+
+    timer->proc_options.file = fs_str_get(fs_arr_nth(fs_str_t, fs_run_tokens(run), 1));
+    timer->proc_options.args = args;
+    timer->proc_options.flags = UV_PROCESS_DETACHED;
+    timer->proc_options.env = NULL;
+
+    timer->cb_flag = true;
+
+    for (i = 1; i < fs_arr_count(fs_run_tokens(run)); i++) {
+        args[i - 1] = fs_str_get(fs_arr_nth(fs_str_t, fs_run_tokens(run), i));
+    }
+    args[i] = NULL;
+
 
     return FS_CONF_OK;
 }

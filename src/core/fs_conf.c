@@ -339,13 +339,14 @@ static int fs_conf_handle(fs_conf_t *conf, int taken_status) {
     int ret;
     fs_cmd_t *cmd;
     fs_str_t *name;
+    bool first;
 
     if (taken_status == FS_CONF_BLOCK_END) {
         if (fs_run_st_empty(conf->run)) {
             return FS_CONF_ERROR;
         }
 
-        if (fs_mod_init_mod_completed(fs_run_st_top_mod(conf->run))) {
+        if (fs_mod_init_mod_completed(fs_run_st_top_mod(conf->run)) && !fs_cmd_is_child(fs_run_st_top_cmd(conf->run))) {
             if (fs_mod_init_mod_completed(fs_run_st_top_mod(conf->run))(conf->run, *fs_run_st_top_ctx(conf->run)) != FS_CONF_OK) {
                 return FS_CONF_ERROR;
             }
@@ -378,41 +379,67 @@ static int fs_conf_handle(fs_conf_t *conf, int taken_status) {
             }
 
             if (fs_cmd_is_child(cmd) && !fs_cmd_is_block(cmd)) {
-                // someone parameter
+                // parameter cmd
 
                 if (fs_run_st_empty(conf->run)) {
                     return FS_CONF_ERROR;
                 }
 
-                if (fs_cmd_call(cmd)(conf->run, *fs_run_st_top_ctx(conf->run)) != FS_CONF_OK) {
+                if ((ret = fs_cmd_call(cmd)(conf->run, *fs_run_st_top_ctx(conf->run))) != FS_CONF_OK) {
+                    if (ret == FS_CONF_PASS) {
+                        continue;
+                    }
+
                     return FS_CONF_ERROR;
                 }
             }
             else {
-                if (fs_run_st_push(conf->run, fs_gmod_nth(i)) == NULL) {
+                if (fs_run_st_push(conf->run, fs_gmod_nth(i), cmd) == NULL) {
                     return FS_CONF_ERROR;
                 }
 
-                if (fs_gmod_nth_init_mod(i)) {
-                    ret = fs_gmod_nth_init_mod(i)(conf, cmd, fs_run_st_top_ctx(conf->run));
+                if (fs_cmd_is_child(cmd)) {
+                    // subblock cmd
+                    *fs_run_st_top_ctx(conf->run) = *fs_run_st_subtop_ctx(conf->run);
+                }
+                else {
+                    // block cmd
+                    if (fs_gmod_nth_init_mod(i)) {
+                        ret = fs_gmod_nth_init_mod(i)(conf, cmd, fs_run_st_top_ctx(conf->run));
 
+                        if (ret == FS_CONF_PASS) {
+                            conf->run->ctx->ele_count--;
+                            fs_run_st_pop(conf->run);
+                            continue;
+                        }
+                        if (ret != FS_CONF_OK) {
+                            return FS_CONF_ERROR;
+                        }
+                    }
+
+                    // used block
+                    if (!fs_gmod_nth_used(i)) {
+                        fs_gmod_nth_ctxs(i) = fs_alloc_arr(&conf->pool, 1, sizeof(void *));
+                    }
+                    first = !fs_gmod_nth_used(i);
+                    fs_gmod_nth_used(i) = true;
+                    fs_gmod_stored_ctx(i, *fs_run_st_top_ctx(conf->run));
+                }
+
+
+                if ((ret = fs_cmd_call(cmd)(conf->run, *fs_run_st_top_ctx(conf->run))) != FS_CONF_OK) {
                     if (ret == FS_CONF_PASS) {
                         conf->run->ctx->ele_count--;
                         fs_run_st_pop(conf->run);
+
+                        fs_gmod_nth_ctxs(i)->ele_count--;
+                        if (first) {
+                            fs_gmod_nth_used(i) = false;
+                            fs_pool_release(&conf->pool, fs_gmod_nth_ctxs(i));
+                        }
+
                         continue;
                     }
-                    if (ret != FS_CONF_OK) {
-                        return FS_CONF_ERROR;
-                    }
-                }
-
-                if (!fs_gmod_nth_used(i)) {
-                    fs_gmod_nth_ctxs(i) = fs_alloc_arr(&conf->pool, 1, sizeof(void *));
-                }
-                fs_gmod_nth_used(i) = true;
-                fs_gmod_stored_ctx(i, *fs_run_st_top_ctx(conf->run));
-
-                if (fs_cmd_call(cmd)(conf->run, *fs_run_st_top_ctx(conf->run)) != FS_CONF_OK) {
                     return FS_CONF_ERROR;
                 }
 

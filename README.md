@@ -9,22 +9,24 @@ Folksong支持对Kafka消费者角色的消息消费代理。Folksong将代理�
 若使用该功能模块，则应该在conf中写如下配置项：
 
 ```
-kafka_listener {
+kafka {
 
     # 指定Kafka broker
-    kafka_config bootstrap.servers 127.0.0.1:9092;
+    config bootstrap.servers 127.0.0.1:9092;
 
     # 指定Kafka Consumer所在的group id
-    kafka_config group.id temp-group;
+    config group.id temp-group;
 
     # 指定Kafka监听的topic
-    kafka_topic listen_topic1 listen_topic2 listen_topic3;
+    topic listen_topic1 {
+        # 消费Kafka消息时触发执行的脚本，消息的value部分将以stdin流入
+        # 支持两个变量：
+        # $kafka_topic: 为消费消息的topic
+        # $kafka_key: 为消费消息的key
+        exec /bin/python3 /home/y/x/x/script.py $kafka_topic $kafka_key;
 
-    # 消费Kafka消息时触发执行的脚本，消息的value部分将以stdin流入
-    # 支持两个变量：
-    # $kafka_topic: 为消费消息的topic
-    # $kafka_key: 为消费消息的key
-    exec /bin/python3 /home/y/x/x/script.py $kafka_topic $kafka_key;
+    }
+
 
 }
 ```

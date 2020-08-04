@@ -29,6 +29,14 @@ struct fs_str_s {
         }                                           \
     }
 
+#define fs_str_set_with_len(str, text, len)                     \
+    ({                                                          \
+        (str)->buf.buf = (void *) (text);                       \
+        (str)->buf.pos = (void *) (text);                       \
+        (str)->buf.last = (void *) (text) + len;                \
+        (str)->buf.temp = false;                                \
+     })
+
 #define fs_null_str         \
     {                       \
         .buf = {            \
@@ -46,7 +54,7 @@ struct fs_str_s {
     ({                                                          \
         (str)->buf.buf = (void *) (text);                       \
         (str)->buf.pos = (void *) (text);                       \
-        (str)->buf.last = (void *) (text) + sizeof(text) - 1;   \
+        (str)->buf.last = (void *) (text) + strlen(text) - 1;   \
         (str)->buf.temp = false;                                \
      })
 
