@@ -15,6 +15,9 @@
 #include <uv.h>
 
 typedef struct fs_mod_http_s fs_mod_http_t;
+typedef struct fs_mod_http_route_s fs_mod_http_route_t;
+typedef struct fs_mod_http_req_s fs_mod_http_req_t;
+
 struct fs_mod_http_s {
     uv_tcp_t                conn;
 
@@ -28,17 +31,23 @@ struct fs_mod_http_s {
     fs_log_t                *log;
 };
 
-typedef struct fs_mod_http_route_s fs_mod_http_route_t;
 struct fs_mod_http_route_s {
+    bool (*match_cb) (fs_mod_http_req_t *req);
 
+    int (*init_ctx_cb) (fs_mod_http_req_t *req, void **ctx);
+    int (*release_ctx_cb) (void *ctx);
+
+    int (*process_cb) (fs_mod_http_req_t *req, void *ctx);
+    int (*response_cb)  (uv_stream_t *stream, fs_mod_http_req_t *req, void *ctx);
 };
 
-typedef struct fs_mod_http_req_s fs_mod_http_req_t;
 struct fs_mod_http_req_s {
     uv_tcp_t                conn;
     http_parser_settings    settings;
     http_parser             parser;
     fs_log_t                *log;
+
+    fs_pool_t               *pool;
 
     fs_arr_t                *routes;
     fs_mod_http_route_t     *route;
@@ -48,7 +57,16 @@ struct fs_mod_http_req_s {
     size_t                  parsed_len;
 
     fs_str_t                url;
+    bool                    parsed;
+    bool                    responsed;
+
+    uv_write_t              writer;
+
+    fs_buf_t                body;
 };
+
+int fs_mod_http_response_404(uv_stream_t *stream, fs_mod_http_req_t *req);
+int fs_mod_http_response_200(uv_stream_t *stream, fs_mod_http_req_t *req);
 
 #endif
 

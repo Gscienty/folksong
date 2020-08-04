@@ -1,0 +1,3 @@
+[submodule "misc/http-parser"]
+	path = misc/http-parser
+	url = https://github.com/nodejs/http-parser.git
