@@ -150,7 +150,7 @@ static int fs_mod_http_kafka_process_cb(void *conf, fs_mod_http_req_t *req) {
     ret = rd_kafka_producev(rk,
                             RD_KAFKA_V_TOPIC(topic),
                             RD_KAFKA_V_MSGFLAGS(RD_KAFKA_MSG_F_COPY),
-                            RD_KAFKA_V_VALUE((char *) req->body.pos, fs_buf_size(&req->body) - 1),
+                            RD_KAFKA_V_VALUE((char *) req->body.pos, fs_buf_size(&req->body)),
                             RD_KAFKA_V_OPAQUE(NULL),
                             RD_KAFKA_V_END);
 
@@ -162,6 +162,7 @@ static int fs_mod_http_kafka_process_cb(void *conf, fs_mod_http_req_t *req) {
     }
 
     rd_kafka_poll(rk, 0);
+    fs_log_dbg(req->log, "fs_mod_http_kafka: flushing messages, wait for max %dms", 10 * 1000);
     rd_kafka_flush(rk, 10 * 1000);
 
     rd_kafka_destroy(rk);
