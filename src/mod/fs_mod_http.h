@@ -39,7 +39,7 @@ struct fs_mod_http_route_s {
 
     bool (*match_cb) (void *conf, fs_mod_http_req_t *req);
 
-    int (*process_cb) (fs_mod_http_req_t *req);
+    int (*process_cb) (void *conf, fs_mod_http_req_t *req);
 };
 
 struct fs_mod_http_req_s {

@@ -163,6 +163,7 @@ static void fs_mod_http_connection_cb(uv_stream_t *stream, int status) {
     req->readed_len         = 0;
     req->parsed_len         = 0;
     req->routes             = http->routes;
+    req->route              = NULL;
     req->parsed             = false;
     req->body.buf           = false;
     req->body.buf_len       = 0;
@@ -251,16 +252,12 @@ static void fs_mod_http_req_readed_cb(uv_stream_t *stream, ssize_t nread, const 
             req->body.last = buf->base + nread;
         }
 
-        if (req->url.buf.buf != NULL && req->route == NULL) {
-            fs_mod_http_response(stream, req, 404, "Not Found");
-            return;
-        }
-
         if (req->parsed) {
-            if (req->route->process_cb(req) != FS_MOD_HTTP_OK) {
-                fs_mod_http_response(stream, req, 500, "Internal Server Error");
+            if (req->route == NULL) {
+                fs_mod_http_response(stream, req, 404, "Not Found");
                 return;
             }
+            req->route->process_cb(req->route->conf, req);
         }
     }
 }
@@ -274,6 +271,7 @@ static int fs_mod_http_on_url(http_parser *parser, const char *at, size_t length
     fs_mod_http_route_t *route;
 
     fs_str_set_with_len(&req->url, at, length);
+    *(char *) req->url.buf.last = 0;
 
     for (i = 0; i < req->routes->ele_count; i++) {
         route = fs_arr_nth(fs_mod_http_route_t, req->routes, i);
