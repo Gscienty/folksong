@@ -14,6 +14,9 @@
 #include "http-parser/http_parser.h"
 #include <uv.h>
 
+#define FS_MOD_HTTP_ERROR   -1
+#define FS_MOD_HTTP_OK      0
+
 typedef struct fs_mod_http_s fs_mod_http_t;
 typedef struct fs_mod_http_route_s fs_mod_http_route_t;
 typedef struct fs_mod_http_req_s fs_mod_http_req_t;
@@ -32,13 +35,11 @@ struct fs_mod_http_s {
 };
 
 struct fs_mod_http_route_s {
-    bool (*match_cb) (fs_mod_http_req_t *req);
+    void *conf;
 
-    int (*init_ctx_cb) (fs_mod_http_req_t *req, void **ctx);
-    int (*release_ctx_cb) (void *ctx);
+    bool (*match_cb) (void *conf, fs_mod_http_req_t *req);
 
-    int (*process_cb) (fs_mod_http_req_t *req, void *ctx);
-    int (*response_cb)  (uv_stream_t *stream, fs_mod_http_req_t *req, void *ctx);
+    int (*process_cb) (fs_mod_http_req_t *req);
 };
 
 struct fs_mod_http_req_s {
@@ -65,8 +66,21 @@ struct fs_mod_http_req_s {
     fs_buf_t                body;
 };
 
-int fs_mod_http_response_404(uv_stream_t *stream, fs_mod_http_req_t *req);
-int fs_mod_http_response_200(uv_stream_t *stream, fs_mod_http_req_t *req);
+void fs_mod_http_res_writed_cb(uv_write_t *req, int status);
+
+#define fs_mod_http_response(stream, req, code, status)                                 \
+    ({                                                                                  \
+        (req)->responsed = true;                                                        \
+        const char msg[] =                                                              \
+            "HTTP/1.1 " #code " " status "\r\n"                                         \
+            "Connection: close\r\n"                                                     \
+            "Content-Length: 0\r\n"                                                     \
+            "\r\n";                                                                     \
+        uv_buf_t not_found_msg[] = {                                                    \
+            { .base = (char *) msg, .len = sizeof(msg) }                                \
+        };                                                                              \
+        uv_write(&req->writer, stream, not_found_msg, 1, fs_mod_http_res_writed_cb);    \
+     })
 
 #endif
 

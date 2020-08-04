@@ -31,6 +31,7 @@ struct fs_run_s {
     fs_pool_t   *pool;
 
     fs_conf_t   *conf;
+    int         st_depth;
 };
 
 int fs_run_init(fs_run_t *run, fs_conf_t *conf);
@@ -41,32 +42,39 @@ fs_qe_inited_t *fs_alloc_qe_inited(fs_run_t *run, int (*inited) (fs_run_t *run, 
 
 int fs_run(fs_run_t *run);
 
-#define fs_run_st_empty(run)                                    \
+#define fs_run_st_empty(run)                                        \
     (fs_queue_empty(&(run)->st_mod))
 
-#define fs_run_st_top(run)                                      \
+#define fs_run_st_top(run)                                          \
     (fs_queue_head(fs_st_mod_t, &(run)->st_mod, link))
 
-#define fs_run_st_subtop(run)                                   \
-    (fs_queue_payload(fs_st_mod_t, (run)->st_mod.next, link))
+#define fs_run_st_subtop(run)                                       \
+    (fs_queue_payload(fs_st_mod_t, (run)->st_mod.next->next, link))
 
-#define fs_run_st_top_ctx(run)                                  \
+#define fs_run_st_top_ctx(run)                                      \
     (fs_run_st_top(run)->ctx)
 
-#define fs_run_st_subtop_ctx(run)                               \
+#define fs_run_st_subtop_ctx(run)                                   \
     (fs_run_st_subtop(run)->ctx)
 
-#define fs_run_st_top_mod(run)                                  \
+#define fs_run_st_top_mod(run)                                      \
     (fs_run_st_top(run)->mod)
 
-#define fs_run_st_top_cmd(run)                                  \
+#define fs_run_st_subtop_mod(run)                                   \
+    (fs_run_st_subtop(run)->mod)
+
+#define fs_run_st_top_cmd(run)                                      \
     (fs_run_st_top(run)->cmd)
 
-#define fs_run_st_subtop_cmd(run)                               \
+#define fs_run_st_depth(run)                                        \
+    ((run)->st_depth)
+
+#define fs_run_st_subtop_cmd(run)                                   \
     (fs_run_st_subtop(run)->cmd)
 
 #define fs_run_st_pop(run)                                      \
     ({                                                          \
+        (run)->st_depth--;                                      \
         fs_st_mod_t *_st_mod = fs_run_st_top(run);              \
         fs_queue_remove(&_st_mod->link);                        \
         fs_pool_release((run)->pool, _st_mod);                  \
@@ -80,10 +88,11 @@ int fs_run(fs_run_t *run);
 
 #define fs_run_st_push(run, mod, cmd)                                   \
     ({                                                                  \
+        (run)->st_depth++;                                              \
         fs_st_mod_t *_st_mod = fs_alloc_st_mod(run, mod, cmd);          \
         _st_mod->ctx = fs_run_ctx_push(run);                            \
         _st_mod ?                                                       \
-            fs_queue_insert_before(&(run)->st_mod, &_st_mod->link)      \
+            fs_queue_insert_after(&(run)->st_mod, &_st_mod->link)       \
             : NULL;                                                     \
      })
 

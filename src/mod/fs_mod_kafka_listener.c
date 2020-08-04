@@ -98,6 +98,9 @@ static int fs_mod_kafka_listener_init_mod(fs_conf_t *conf, fs_cmd_t *cmd, void *
     if (!fs_cmd_equal(cmd, fs_mod_kafka_listener_block)) {
         return FS_CONF_PASS;
     }
+    if (fs_run_st_depth(conf->run) != 1) {
+        return FS_CONF_PASS;
+    }
     *ctx = fs_pool_alloc(&conf->pool, sizeof(fs_mod_kafka_listener_t));
     listener = *ctx;
 
@@ -181,8 +184,11 @@ static int fs_mod_kafka_listener_inited(fs_run_t *run, fs_arr_t *ctxs) {
 }
 
 static int fs_mod_kafka_listener_block(fs_run_t *run, void *ctx) {
-    (void) run;
     (void) ctx;
+
+    if (fs_run_st_top_mod(run) != &fs_mod_kafka_listener) {
+        return FS_CONF_PASS;
+    }
 
     return FS_CONF_OK;
 }
@@ -191,7 +197,7 @@ static int fs_mod_kafka_listener_cmd_topic(fs_run_t *run, void *ctx) {
     if (fs_run_st_top_mod(run) != &fs_mod_kafka_listener) {
         return FS_CONF_PASS;
     }
-    if (!fs_cmd_equal(fs_run_st_top_cmd(run), fs_mod_kafka_listener_block)) {
+    if (!fs_cmd_equal(fs_run_st_subtop_cmd(run), fs_mod_kafka_listener_block)) {
         return FS_CONF_ERROR;
     }
 
@@ -246,7 +252,7 @@ static int fs_mod_kafka_listener_cmd_exec(fs_run_t *run, void *ctx) {
     if (fs_run_st_top_mod(run) != &fs_mod_kafka_listener) {
         return FS_CONF_PASS;
     }
-    if (!fs_cmd_equal(fs_run_st_subtop_cmd(run), fs_mod_kafka_listener_block)) {
+    if (!fs_cmd_equal(fs_run_st_top_cmd(run), fs_mod_kafka_listener_cmd_topic)) {
         return FS_CONF_ERROR;
     }
 

@@ -14,13 +14,14 @@
 #include "fs_uv.h"
 
 int fs_run_init(fs_run_t *run, fs_conf_t *conf) {
-    run->conf   = conf;
-    conf->run   = run;
+    run->conf       = conf;
+    conf->run       = run;
 
-    run->pool   = &conf->pool;
-    run->mods   = fs_alloc_arr(&conf->pool, 8, sizeof(fs_mod_t *));
-    run->ctx    = fs_alloc_arr(&conf->pool, 8, sizeof(void *));
-    run->uv     = fs_pool_alloc(&conf->pool, sizeof(fs_uv_t));
+    run->pool       = &conf->pool;
+    run->mods       = fs_alloc_arr(&conf->pool, 8, sizeof(fs_mod_t *));
+    run->ctx        = fs_alloc_arr(&conf->pool, 8, sizeof(void *));
+    run->uv         = fs_pool_alloc(&conf->pool, sizeof(fs_uv_t));
+    run->st_depth   = 0;
 
     fs_queue_init(&run->st_mod);
     fs_queue_init(&run->inited);

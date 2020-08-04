@@ -41,8 +41,6 @@ static int fs_mod_http_on_message_complete(http_parser *parser);
 
 static void fs_mod_http_req_release(uv_handle_t *handle);
 
-static void fs_mod_http_res_writed_cb(uv_write_t *req, int status);
-
 fs_mod(1, fs_mod_http, &method,
        fs_block_cmd(fs_str("http"),         fs_mod_http_block),
        fs_param_cmd(fs_str("host"),         fs_mod_http_cmd_host),
@@ -119,6 +117,8 @@ static int fs_mod_http_cmd_host(fs_run_t *run, void *ctx) {
 
     http->host = *fs_arr_nth(fs_str_t, fs_run_tokens(run), 1);
 
+    fs_log_dbg(host->log, "fs_mod_http: config http listen host: %s", fs_str_get(&http->host));
+
     return FS_CONF_OK;
 }
 
@@ -134,6 +134,8 @@ static int fs_mod_http_cmd_port(fs_run_t *run, void *ctx) {
     }
 
     http->port = atoi(fs_str_get(fs_arr_nth(fs_str_t, fs_run_tokens(run), 1)));
+
+    fs_log_dbg(host->log, "fs_mod_http: config http listen port: %d", http->port);
 
     return FS_CONF_OK;
 }
@@ -250,7 +252,15 @@ static void fs_mod_http_req_readed_cb(uv_stream_t *stream, ssize_t nread, const 
         }
 
         if (req->url.buf.buf != NULL && req->route == NULL) {
-            fs_mod_http_response_404(stream, req);
+            fs_mod_http_response(stream, req, 404, "Not Found");
+            return;
+        }
+
+        if (req->parsed) {
+            if (req->route->process_cb(req) != FS_MOD_HTTP_OK) {
+                fs_mod_http_response(stream, req, 500, "Internal Server Error");
+                return;
+            }
         }
     }
 }
@@ -267,7 +277,7 @@ static int fs_mod_http_on_url(http_parser *parser, const char *at, size_t length
 
     for (i = 0; i < req->routes->ele_count; i++) {
         route = fs_arr_nth(fs_mod_http_route_t, req->routes, i);
-        if (route->match_cb(req)) {
+        if (route->match_cb(route->conf, req)) {
             req->route = route;
             break;
         }
@@ -305,41 +315,9 @@ static void fs_mod_http_req_release(uv_handle_t *handle) {
     fs_pool_release(req->pool, req);
 }
 
-int fs_mod_http_response_404(uv_stream_t *stream, fs_mod_http_req_t *req) {
-    req->responsed = true;
-    static const char msg[] =
-        "HTTP/1.1 404 Not Found\r\n"
-        "Connection: close\r\n"
-        "\r\n";
-
-    uv_buf_t not_found_msg[] = {
-        { .base = (char *) msg, .len = sizeof(msg) }
-    };
-
-    uv_write(&req->writer, stream, not_found_msg, 1, fs_mod_http_res_writed_cb);
-
-    return 0;
-}
-
-int fs_mod_http_response_200(uv_stream_t *stream, fs_mod_http_req_t *req) {
-    req->responsed = true;
-    static const char msg[] =
-        "HTTP/1.1 200 OK\r\n"
-        "Connection: close\r\n"
-        "\r\n";
-
-    uv_buf_t not_found_msg[] = {
-        { .base = (char *) msg, .len = sizeof(msg) }
-    };
-
-    uv_write(&req->writer, stream, not_found_msg, 1, fs_mod_http_res_writed_cb);
-
-    return 0;
-}
-
 #define fs_mod_http_req_writed_reflect(_handler)                                                        \
     ((fs_mod_http_req_t *) (((void *) (_handler)) - ((void *) &((fs_mod_http_req_t *) 0)->writer)))
-static void fs_mod_http_res_writed_cb(uv_write_t *req, int status) {
+void fs_mod_http_res_writed_cb(uv_write_t *req, int status) {
     (void) status;
     fs_mod_http_req_t *http_req = fs_mod_http_req_writed_reflect(req);
 

@@ -432,7 +432,9 @@ static int fs_conf_handle(fs_conf_t *conf, int taken_status) {
                         conf->run->ctx->ele_count--;
                         fs_run_st_pop(conf->run);
 
-                        fs_gmod_nth_ctxs(i)->ele_count--;
+                        if (fs_gmod_nth_ctxs(i)) {
+                            fs_gmod_nth_ctxs(i)->ele_count--;
+                        }
                         if (first) {
                             fs_gmod_nth_used(i) = false;
                             fs_pool_release(&conf->pool, fs_gmod_nth_ctxs(i));
