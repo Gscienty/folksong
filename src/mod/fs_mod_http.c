@@ -35,8 +35,11 @@ static void fs_mod_http_connection_cb(uv_stream_t *stream, int status);
 static void fs_mod_http_req_read_alloc_cb(uv_handle_t *handle, size_t suggested_size, uv_buf_t *buf);
 static void fs_mod_http_req_readed_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf);
 
+static void fs_mod_http_buf_append(uv_buf_t *buf, size_t *nlen, const char *at, size_t length);
+
 static int fs_mod_http_on_url(http_parser *parser, const char *at, size_t length);
 static int fs_mod_http_on_body(http_parser *parser, const char *at, size_t length);
+static int fs_mod_http_on_headers_complete(http_parser *parser);
 static int fs_mod_http_on_message_complete(http_parser *parser);
 
 static void fs_mod_http_req_release(uv_handle_t *handle);
@@ -158,27 +161,20 @@ static void fs_mod_http_connection_cb(uv_stream_t *stream, int status) {
 
     req->log                = http->log;
     req->pool               = http->pool;
-    req->read_buf.base      = NULL;
-    req->read_buf.len       = 0;
-    req->readed_len         = 0;
-    req->parsed_len         = 0;
     req->routes             = http->routes;
     req->route              = NULL;
-    req->parsed             = false;
-    req->body.buf           = false;
-    req->body.buf_len       = 0;
-    req->body.pos           = NULL;
-    req->body.last          = NULL;
-    req->body.temp          = true;
-    req->url.buf.buf        = NULL;
-    req->url.buf.pos        = NULL;
-    req->url.buf.last       = NULL;
-    req->url.buf.buf_len    = 0;
-    req->url.buf.temp       = true;
-    req->responsed          = false;
+    req->buf.base           = NULL;
+    req->buf.len            = 0;
+    req->body_buf.base      = NULL;
+    req->body_buf.len       = 0;
+    req->body_len           = 0;
+    req->url_buf.base       = NULL;
+    req->url_buf.len        = 0;
+    req->url_len            = 0;
 
     req->settings.on_url                = fs_mod_http_on_url;
     req->settings.on_body               = fs_mod_http_on_body;
+    req->settings.on_headers_complete   = fs_mod_http_on_headers_complete;
     req->settings.on_message_complete   = fs_mod_http_on_message_complete;
 
     if (uv_tcp_init(http->loop, &req->conn) != 0) {
@@ -201,28 +197,12 @@ static void fs_mod_http_req_read_alloc_cb(uv_handle_t *handle, size_t suggested_
 
     fs_log_dbg(req->log, "fs_mod_http: read http req, suggested_size: %ld", suggested_size);
 
-    if (req->responsed) {
-        *buf = req->read_buf;
+    if (req->buf.base == NULL) {
+        req->buf.base  = malloc(suggested_size);
+        req->buf.len   = suggested_size;
     }
 
-    if (req->read_buf.base == NULL) {
-        req->read_buf.base  = malloc(suggested_size);
-        req->read_buf.len   = suggested_size;
-
-        *buf = req->read_buf;
-    }
-    else {
-        size_t remain_size = req->read_buf.len - req->readed_len;
-        if (remain_size < suggested_size) {
-            req->read_buf.base = realloc(req->read_buf.base, req->read_buf.len << 1);
-            req->read_buf.len <<= 1;
-
-            remain_size = req->read_buf.len - req->readed_len;
-        }
-
-        buf->base = req->read_buf.base + req->readed_len;
-        buf->len = suggested_size;
-    }
+    *buf = req->buf;
 }
 
 static void fs_mod_http_req_readed_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf) {
@@ -237,27 +217,11 @@ static void fs_mod_http_req_readed_cb(uv_stream_t *stream, ssize_t nread, const 
         }
     }
     else {
-        if (req->responsed) {
-            return;
-        }
+        nparsed = http_parser_execute(&req->parser, &req->settings, buf->base, nread);
+        if (nparsed < (size_t) nread) {
+            fs_log_err(req->log, "fs_mod_http_req: parsed error, %ld\n", nparsed);
 
-        req->readed_len += nread;
-
-        do {
-            // note: one connection may have multi http req
-            nparsed = http_parser_execute(&req->parser, &req->settings, buf->base, nread);
-        } while (!req->parsed);
-        
-        if (req->body.pos != NULL) {
-            req->body.last = buf->base + nread;
-        }
-
-        if (req->parsed) {
-            if (req->route == NULL) {
-                fs_mod_http_response(stream, req, 404, "Not Found");
-                return;
-            }
-            req->route->process_cb(req->route->conf, req);
+            uv_close((uv_handle_t *) stream, fs_mod_http_req_release);
         }
     }
 }
@@ -265,17 +229,34 @@ static void fs_mod_http_req_readed_cb(uv_stream_t *stream, ssize_t nread, const 
 #define fs_mod_http_req_parser_reflect(_handler)                                                      \
     ((fs_mod_http_req_t *) (((void *) (_handler)) - ((void *) &((fs_mod_http_req_t *) 0)->parser)))
 static int fs_mod_http_on_url(http_parser *parser, const char *at, size_t length) {
-    int i;
+    fs_mod_http_req_t *req = fs_mod_http_req_parser_reflect(parser);
+    fs_mod_http_buf_append(&req->url_buf, &req->url_len, at, length);
+
+    fs_str_from_uv(&req->url, &req->url_buf, req->url_len);
+
+    return 0;
+}
+
+static int fs_mod_http_on_body(http_parser *parser, const char *at, size_t length) {
+    fs_mod_http_req_t *req = fs_mod_http_req_parser_reflect(parser);
+    fs_mod_http_buf_append(&req->body_buf, &req->body_len, at, length);
+
+    fs_str_from_uv(&req->body, &req->body_buf, req->body_len);
+
+    return 0;
+}
+
+static int fs_mod_http_on_headers_complete(http_parser *parser) {
 
     fs_mod_http_req_t *req = fs_mod_http_req_parser_reflect(parser);
-    fs_mod_http_route_t *route;
-
-    fs_str_set_with_len(&req->url, at, length);
-    *(char *) req->url.buf.last = 0;
+    fs_mod_http_route_t *route = NULL;
+    int i;
 
     for (i = 0; i < req->routes->ele_count; i++) {
         route = fs_arr_nth(fs_mod_http_route_t, req->routes, i);
+
         if (route->match_cb(route->conf, req)) {
+
             req->route = route;
             break;
         }
@@ -284,24 +265,32 @@ static int fs_mod_http_on_url(http_parser *parser, const char *at, size_t length
     return 0;
 }
 
-static int fs_mod_http_on_body(http_parser *parser, const char *at, size_t length) {
-    (void) length;
+static int fs_mod_http_on_message_complete(http_parser *parser) {
 
     fs_mod_http_req_t *req = fs_mod_http_req_parser_reflect(parser);
 
-    req->body.pos = (char *) at;
-    if (parser->content_length == 0) {
-        req->parsed = true;
+    if (req->route == NULL) {
+        fs_mod_http_response((uv_stream_t *) &req->conn, req, 404, "Not Found");
+    }
+    else {
+        req->route->process_cb(req->route->conf, req);
     }
 
     return 0;
 }
 
-static int fs_mod_http_on_message_complete(http_parser *parser) {
-    fs_mod_http_req_t *req = fs_mod_http_req_parser_reflect(parser);
-    req->parsed = true;
-
-    return 0;
+static void fs_mod_http_buf_append(uv_buf_t *buf, size_t *nlen, const char *at, size_t length) {
+    if (buf->base == NULL) {
+        buf->base = malloc(length + 1);
+        buf->len = length + 1;
+    }
+    else if (*nlen + length < buf->len) {
+        buf->len = (buf->len << 1) + 1;
+        buf->base = realloc(buf->base, buf->len);
+    }
+    memcpy(buf->base + *nlen, at, length);
+    *nlen += length;
+    buf->base[*nlen] = 0;
 }
 
 static void fs_mod_http_req_release(uv_handle_t *handle) {
@@ -309,7 +298,15 @@ static void fs_mod_http_req_release(uv_handle_t *handle) {
 
     fs_log_dbg(req->log, "fs_mod_http: release req, %d", 0);
 
-    free(req->read_buf.base);
+    if (req->buf.base != NULL) {
+        free(req->buf.base);
+    }
+    if (req->url_buf.base != NULL) {
+        free(req->url_buf.base);
+    }
+    if (req->body_buf.base != NULL) {
+        free(req->body_buf.base);
+    }
     fs_pool_release(req->pool, req);
 }
 

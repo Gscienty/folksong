@@ -29,6 +29,14 @@ struct fs_str_s {
         }                                           \
     }
 
+#define fs_str_from_uv(_str, _buf, len)             \
+    ({                                              \
+        (_str)->buf.buf = (_buf)->base;             \
+        (_str)->buf.pos = (_buf)->base;             \
+        (_str)->buf.last = (_buf)->base + len;      \
+        (_str)->buf.temp = false;                   \
+    })
+
 #define fs_str_set_with_len(str, text, len)                     \
     ({                                                          \
         (str)->buf.buf = (void *) (text);                       \

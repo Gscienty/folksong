@@ -53,24 +53,23 @@ struct fs_mod_http_req_s {
     fs_arr_t                *routes;
     fs_mod_http_route_t     *route;
 
-    uv_buf_t                read_buf;
-    size_t                  readed_len;
-    size_t                  parsed_len;
+    uv_buf_t                buf;
+
+    uv_buf_t                url_buf;
+    size_t                  url_len;
+    uv_buf_t                body_buf;
+    size_t                  body_len;
 
     fs_str_t                url;
-    bool                    parsed;
-    bool                    responsed;
+    fs_str_t                body;
 
     uv_write_t              writer;
-
-    fs_buf_t                body;
 };
 
 void fs_mod_http_res_writed_cb(uv_write_t *req, int status);
 
 #define fs_mod_http_response(stream, req, code, status)                                 \
     ({                                                                                  \
-        (req)->responsed = true;                                                        \
         const char msg[] =                                                              \
             "HTTP/1.1 " #code " " status "\r\n"                                         \
             "Connection: close\r\n"                                                     \

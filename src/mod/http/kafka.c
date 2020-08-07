@@ -120,7 +120,7 @@ static int fs_mod_http_kafka_process_cb(void *conf, fs_mod_http_req_t *req) {
         *key++ = 0;
     }
 
-    if (req->body.pos == 0) {
+    if (req->body.buf.pos == NULL) {
         fs_mod_http_response((uv_stream_t *) &req->conn, req, 400, "Bad Request");
 
         return FS_MOD_HTTP_ERROR;
@@ -150,7 +150,7 @@ static int fs_mod_http_kafka_process_cb(void *conf, fs_mod_http_req_t *req) {
     ret = rd_kafka_producev(rk,
                             RD_KAFKA_V_TOPIC(topic),
                             RD_KAFKA_V_MSGFLAGS(RD_KAFKA_MSG_F_COPY),
-                            RD_KAFKA_V_VALUE((char *) req->body.pos, fs_buf_size(&req->body)),
+                            RD_KAFKA_V_VALUE((char *) req->body.buf.pos, fs_str_size(&req->body)),
                             RD_KAFKA_V_OPAQUE(NULL),
                             RD_KAFKA_V_END);
 
