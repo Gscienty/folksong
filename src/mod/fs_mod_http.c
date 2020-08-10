@@ -38,8 +38,10 @@ static void fs_mod_http_req_readed_cb(uv_stream_t *stream, ssize_t nread, const 
 static void fs_mod_http_buf_append(uv_buf_t *buf, size_t *nlen, const char *at, size_t length);
 
 static int fs_mod_http_on_url(http_parser *parser, const char *at, size_t length);
-static int fs_mod_http_on_body(http_parser *parser, const char *at, size_t length);
+static int fs_mod_http_on_header_field(http_parser *parser, const char *at, size_t length);
+static int fs_mod_http_on_header_value(http_parser *parser, const char *at, size_t length);
 static int fs_mod_http_on_headers_complete(http_parser *parser);
+static int fs_mod_http_on_body(http_parser *parser, const char *at, size_t length);
 static int fs_mod_http_on_message_complete(http_parser *parser);
 
 static void fs_mod_http_req_release(uv_handle_t *handle);
@@ -173,6 +175,8 @@ static void fs_mod_http_connection_cb(uv_stream_t *stream, int status) {
     req->url_len            = 0;
 
     req->settings.on_url                = fs_mod_http_on_url;
+    req->settings.on_header_field       = fs_mod_http_on_header_field;
+    req->settings.on_header_value       = fs_mod_http_on_header_value;
     req->settings.on_body               = fs_mod_http_on_body;
     req->settings.on_headers_complete   = fs_mod_http_on_headers_complete;
     req->settings.on_message_complete   = fs_mod_http_on_message_complete;
@@ -237,11 +241,12 @@ static int fs_mod_http_on_url(http_parser *parser, const char *at, size_t length
     return 0;
 }
 
-static int fs_mod_http_on_body(http_parser *parser, const char *at, size_t length) {
-    fs_mod_http_req_t *req = fs_mod_http_req_parser_reflect(parser);
-    fs_mod_http_buf_append(&req->body_buf, &req->body_len, at, length);
+static int fs_mod_http_on_header_field(http_parser *parser, const char *at, size_t length) {
 
-    fs_str_from_uv(&req->body, &req->body_buf, req->body_len);
+    return 0;
+}
+
+static int fs_mod_http_on_header_value(http_parser *parser, const char *at, size_t length) {
 
     return 0;
 }
@@ -261,6 +266,15 @@ static int fs_mod_http_on_headers_complete(http_parser *parser) {
             break;
         }
     }
+
+    return 0;
+}
+
+static int fs_mod_http_on_body(http_parser *parser, const char *at, size_t length) {
+    fs_mod_http_req_t *req = fs_mod_http_req_parser_reflect(parser);
+    fs_mod_http_buf_append(&req->body_buf, &req->body_len, at, length);
+
+    fs_str_from_uv(&req->body, &req->body_buf, req->body_len);
 
     return 0;
 }

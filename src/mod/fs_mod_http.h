@@ -57,6 +57,8 @@ struct fs_mod_http_req_s {
 
     uv_buf_t                url_buf;
     size_t                  url_len;
+    fs_arr_t                *p_key;
+    fs_arr_t                *p_val;
     uv_buf_t                body_buf;
     size_t                  body_len;
 
