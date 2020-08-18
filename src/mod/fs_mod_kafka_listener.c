@@ -49,7 +49,6 @@ struct fs_mod_kafka_listener_proc_handler_s {
     uv_process_t            handler;
 
     uv_pipe_t               in;
-    uv_pipe_t               out;
 
     uv_process_options_t    options;
 
@@ -341,14 +340,13 @@ static void fs_mod_kafka_listener_poll_cb(uv_poll_t *handler, int status, int ev
         proc->options.exit_cb = fs_mod_kafka_listener_proc_exited_cb;
 
         proc->stdio[0].flags = UV_CREATE_PIPE | UV_READABLE_PIPE;
-        proc->stdio[1].flags = UV_CREATE_PIPE | UV_WRITABLE_PIPE;
+        proc->stdio[1].flags = UV_INHERIT_FD;
         proc->stdio[2].flags = UV_INHERIT_FD;
 
         uv_pipe_init(listener->loop, &proc->in, true);
-        uv_pipe_init(listener->loop, &proc->out, true);
 
         proc->stdio[0].data.stream = (uv_stream_t *) &proc->in;
-        proc->stdio[1].data.stream = (uv_stream_t *) &proc->out;
+        proc->stdio[1].data.fd = 1;
         proc->stdio[2].data.fd = 2;
 
         for (i = 0; topic->proc_options.args[i]; i++) {
@@ -372,17 +370,14 @@ static void fs_mod_kafka_listener_poll_cb(uv_poll_t *handler, int status, int ev
         fs_log_info(proc->log, "fs_mod_kafka: received message, len: %ld", rkm->len);
 
         if ((ret = uv_spawn(listener->loop, &proc->handler, &proc->options)) != 0) {
-            fs_log_err(proc->log, "fs_mod_kafka: %s", uv_strerror(ret));
+            fs_log_err(proc->log, "fs_mod_kafka: uv_spawn error, %s", uv_strerror(ret));
             return;
         }
-        uv_unref((uv_handle_t *) &proc->handler);
 
         if ((ret = uv_write(&proc->in_write_req, (uv_stream_t *) &proc->in, writed, 1, fs_mod_kafka_listener_proc_writed_cb)) != 0) {
-            fs_log_err(proc->log, "fs_mod_kafka: %s", uv_strerror(ret));
+            fs_log_err(proc->log, "fs_mod_kafka: uv_write error, %s", uv_strerror(ret));
             return;
         }
-
-        uv_read_start((uv_stream_t *) &proc->out, fs_mod_kafka_listener_proc_read_alloc_cb, fs_mod_kafka_listener_proc_readed_cb);
     }
 }
 
@@ -405,7 +400,6 @@ static void fs_mod_kafka_listener_proc_exited_cb(uv_process_t *handle, int64_t e
     fs_mod_kafka_listener_proc_handler_t *proc = fs_mod_kafka_listener_proc_handler_proc_reflect(handle);
 
     fs_log_info(proc->log, "fs_mod_kafka: proc exited, status: %ld, term_signal: %d", exit_status, term_signal);
-    fs_log_dbg(proc->log, "fs_mod_kafka: proc output: size: %ld", proc->readed_len);
 
     if (proc->read_buf.base) {
         free(proc->read_buf.base);
@@ -417,44 +411,3 @@ static void fs_mod_kafka_listener_proc_pipe_closed_cb(uv_handle_t *handle) {
     (void) handle;
 }
 
-#define fs_mod_kafka_listener_proc_handler_out_reflect(_handler)                                                                                \
-    ((fs_mod_kafka_listener_proc_handler_t *) (((void *) (_handler)) - ((void *) &((fs_mod_kafka_listener_proc_handler_t *) 0)->out)))
-static void fs_mod_kafka_listener_proc_read_alloc_cb(uv_handle_t *_handler, size_t suggested_size, uv_buf_t *buf) {
-    fs_mod_kafka_listener_proc_handler_t *proc = fs_mod_kafka_listener_proc_handler_out_reflect(_handler);
-
-    fs_log_dbg(proc->log, "fs_mod_kakfa: read proc output, suggest_size: %ld", suggested_size);
-
-    if (proc->read_buf.base == NULL) {
-        proc->read_buf.base = malloc(suggested_size);
-        proc->read_buf.len  = suggested_size;
-
-        *buf = proc->read_buf;
-    }
-    else {
-        size_t remain_size = proc->read_buf.len - proc->readed_len;
-        if (remain_size < suggested_size) {
-            proc->read_buf.base = realloc(proc->read_buf.base, proc->read_buf.len << 1);
-            proc->read_buf.len <<= 1;
-
-            remain_size = proc->read_buf.len - proc->readed_len;
-        }
-
-        buf->base = proc->read_buf.base + proc->readed_len;
-        buf->len = suggested_size;
-    }
-
-}
-
-static void fs_mod_kafka_listener_proc_readed_cb(uv_stream_t *stream, ssize_t nread, const uv_buf_t *buf) {
-    (void) buf;
-
-    fs_mod_kafka_listener_proc_handler_t *proc = fs_mod_kafka_listener_proc_handler_out_reflect(stream);
-    if (nread < 0) {
-        if (nread == UV_EOF) {
-            uv_close((uv_handle_t *) &proc->out, fs_mod_kafka_listener_proc_pipe_closed_cb);
-        }
-    }
-    else {
-        proc->readed_len += nread;
-    }
-}

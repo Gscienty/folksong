@@ -167,9 +167,6 @@ static void fs_mod_http_connection_cb(uv_stream_t *stream, int status) {
     req->route              = NULL;
     req->buf.base           = NULL;
     req->buf.len            = 0;
-    req->body_buf.base      = NULL;
-    req->body_buf.len       = 0;
-    req->body_len           = 0;
     req->url_buf.base       = NULL;
     req->url_buf.len        = 0;
     req->url_len            = 0;
@@ -242,11 +239,17 @@ static int fs_mod_http_on_url(http_parser *parser, const char *at, size_t length
 }
 
 static int fs_mod_http_on_header_field(http_parser *parser, const char *at, size_t length) {
+    (void) parser;
+    (void) at;
+    (void) length;
 
     return 0;
 }
 
 static int fs_mod_http_on_header_value(http_parser *parser, const char *at, size_t length) {
+    (void) parser;
+    (void) at;
+    (void) length;
 
     return 0;
 }
@@ -263,6 +266,7 @@ static int fs_mod_http_on_headers_complete(http_parser *parser) {
         if (route->match_cb(route->conf, req)) {
 
             req->route = route;
+            route->init_cb(req);
             break;
         }
     }
@@ -272,9 +276,10 @@ static int fs_mod_http_on_headers_complete(http_parser *parser) {
 
 static int fs_mod_http_on_body(http_parser *parser, const char *at, size_t length) {
     fs_mod_http_req_t *req = fs_mod_http_req_parser_reflect(parser);
-    fs_mod_http_buf_append(&req->body_buf, &req->body_len, at, length);
 
-    fs_str_from_uv(&req->body, &req->body_buf, req->body_len);
+    if (req->route && req->route->body_cb) {
+        req->route->body_cb(req, at, length);
+    }
 
     return 0;
 }
@@ -287,7 +292,7 @@ static int fs_mod_http_on_message_complete(http_parser *parser) {
         fs_mod_http_response((uv_stream_t *) &req->conn, req, 404, "Not Found");
     }
     else {
-        req->route->process_cb(req->route->conf, req);
+        req->route->done_cb(req);
     }
 
     return 0;
@@ -318,9 +323,10 @@ static void fs_mod_http_req_release(uv_handle_t *handle) {
     if (req->url_buf.base != NULL) {
         free(req->url_buf.base);
     }
-    if (req->body_buf.base != NULL) {
-        free(req->body_buf.base);
+    if (req->route && req->route->release_cb) {
+        req->route->release_cb(req);
     }
+
     fs_pool_release(req->pool, req);
 }
 

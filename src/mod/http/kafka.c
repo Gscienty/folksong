@@ -11,6 +11,8 @@
 #include "fs_arr.h"
 #include "fs_mod_http.h"
 #include <librdkafka/rdkafka.h>
+#include <malloc.h>
+#include <stddef.h>
 
 typedef struct fs_mod_http_kafka_conf_item_s fs_mod_http_kafka_conf_item_t;
 struct fs_mod_http_kafka_conf_item_s {
@@ -28,6 +30,11 @@ struct fs_mod_http_kafka_publisher_s {
     fs_log_t            *log;
 };
 
+typedef struct fs_mod_http_kafka_value_s fs_mod_http_kafka_value_t;
+struct fs_mod_http_kafka_value_s {
+    uv_buf_t buf;
+};
+
 extern fs_mod_t fs_mod_http;
 
 static fs_mod_method_t method = {
@@ -40,7 +47,10 @@ static int fs_mod_http_kafka_block(fs_run_t *run, void *ctx);
 static int fs_mod_http_kafka_cmd_config(fs_run_t *run, void *ctx);
 
 static bool fs_mod_http_kafka_match_cb(void *conf, fs_mod_http_req_t *req);
-static int fs_mod_http_kafka_process_cb(void *conf, fs_mod_http_req_t *req);
+static int fs_mod_http_kafka_init_cb(fs_mod_http_req_t *req);
+static int fs_mod_http_kafka_body_cb(fs_mod_http_req_t *req, const char *at, size_t length);
+static int fs_mod_http_kafka_done_cb(fs_mod_http_req_t *req);
+static int fs_mod_http_kafka_release_cb(fs_mod_http_req_t *req);
 
 fs_mod(1, fs_mod_http_kafka, &method,
        fs_subblock_cmd  (fs_str("kafka"), fs_mod_http_kafka_block),
@@ -61,7 +71,10 @@ static int fs_mod_http_kafka_block(fs_run_t *run, void *ctx) {
 
     route->conf         = fs_pool_alloc(run->pool, sizeof(fs_mod_http_kafka_publisher_t));
     route->match_cb     = fs_mod_http_kafka_match_cb;
-    route->process_cb   = fs_mod_http_kafka_process_cb;
+    route->init_cb      = fs_mod_http_kafka_init_cb;
+    route->body_cb      = fs_mod_http_kafka_body_cb;
+    route->done_cb      = fs_mod_http_kafka_done_cb;
+    route->release_cb   = fs_mod_http_kafka_release_cb;
     publisher           = route->conf;
     publisher->prefix   = *fs_arr_nth(fs_str_t, fs_run_tokens(run), 1);
     publisher->conf     = fs_alloc_arr(http->pool, 2, sizeof(fs_mod_http_kafka_conf_item_t));
@@ -104,8 +117,35 @@ static bool fs_mod_http_kafka_match_cb(void *conf, fs_mod_http_req_t *req) {
     return fs_str_get(&req->url) == strstr(fs_str_get(&req->url), fs_str_get(&publisher->prefix));
 }
 
-static int fs_mod_http_kafka_process_cb(void *conf, fs_mod_http_req_t *req) {
-    fs_mod_http_kafka_publisher_t *publisher = conf;
+static int fs_mod_http_kafka_init_cb(fs_mod_http_req_t *req) {
+    fs_mod_http_kafka_value_t *value = fs_pool_alloc(req->pool, sizeof(fs_mod_http_kafka_value_t));
+
+    value->buf.base = NULL;
+    value->buf.len = 0;
+
+    req->self = value;
+
+    return 0;
+}
+
+static int fs_mod_http_kafka_body_cb(fs_mod_http_req_t *req, const char *at, size_t length) {
+    fs_mod_http_kafka_value_t *value = req->self;
+
+    if (value->buf.base == NULL) {
+        value->buf.base = malloc(length);
+    }
+    else {
+        value->buf.base = realloc(value->buf.base, value->buf.len + length);
+    }
+
+    memcpy(value->buf.base + value->buf.len, at, length);
+    value->buf.len += length;
+}
+
+static int fs_mod_http_kafka_done_cb(fs_mod_http_req_t *req) {
+    fs_mod_http_kafka_publisher_t *publisher = req->route->conf;
+    fs_mod_http_kafka_value_t *value = req->self;
+
     char *topic = fs_str_get(&req->url) + fs_str_size(&publisher->prefix) - 1;
     bool only_topic = true;
     char *key = strchr(topic, '/');
@@ -120,7 +160,7 @@ static int fs_mod_http_kafka_process_cb(void *conf, fs_mod_http_req_t *req) {
         *key++ = 0;
     }
 
-    if (req->body.buf.pos == NULL) {
+    if (value->buf.base == NULL) {
         fs_mod_http_response((uv_stream_t *) &req->conn, req, 400, "Bad Request");
 
         return FS_MOD_HTTP_ERROR;
@@ -150,7 +190,7 @@ static int fs_mod_http_kafka_process_cb(void *conf, fs_mod_http_req_t *req) {
     ret = rd_kafka_producev(rk,
                             RD_KAFKA_V_TOPIC(topic),
                             RD_KAFKA_V_MSGFLAGS(RD_KAFKA_MSG_F_COPY),
-                            RD_KAFKA_V_VALUE((char *) req->body.buf.pos, fs_str_size(&req->body)),
+                            RD_KAFKA_V_VALUE((char *) value->buf.base, value->buf.len),
                             RD_KAFKA_V_OPAQUE(NULL),
                             RD_KAFKA_V_END);
 
@@ -171,4 +211,16 @@ static int fs_mod_http_kafka_process_cb(void *conf, fs_mod_http_req_t *req) {
 
     fs_mod_http_response((uv_stream_t *) &req->conn, req, 200, "OK");
     return FS_MOD_HTTP_OK;
+}
+
+static int fs_mod_http_kafka_release_cb(fs_mod_http_req_t *req) {
+    fs_mod_http_kafka_value_t *value = req->self;
+
+    if (value->buf.base) {
+        free(value->buf.base);
+    }
+
+    free(value);
+
+    return 0;
 }

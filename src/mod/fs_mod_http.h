@@ -38,8 +38,10 @@ struct fs_mod_http_route_s {
     void *conf;
 
     bool (*match_cb) (void *conf, fs_mod_http_req_t *req);
-
-    int (*process_cb) (void *conf, fs_mod_http_req_t *req);
+    int (*init_cb) (fs_mod_http_req_t *req);
+    int (*body_cb) (fs_mod_http_req_t *req, const char *at, size_t length);
+    int (*done_cb) (fs_mod_http_req_t *req);
+    int (*release_cb) (fs_mod_http_req_t *req);
 };
 
 struct fs_mod_http_req_s {
@@ -57,13 +59,12 @@ struct fs_mod_http_req_s {
 
     uv_buf_t                url_buf;
     size_t                  url_len;
+    fs_str_t                url;
+
     fs_arr_t                *p_key;
     fs_arr_t                *p_val;
-    uv_buf_t                body_buf;
-    size_t                  body_len;
 
-    fs_str_t                url;
-    fs_str_t                body;
+    void                    *self;
 
     uv_write_t              writer;
 };
