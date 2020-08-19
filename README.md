@@ -27,10 +27,7 @@ kafka {
         # $kafka_topic: 为消费消息的topic
         # $kafka_key: 为消费消息的key
         exec /bin/python3 /home/y/x/x/script.py $kafka_topic $kafka_key;
-
     }
-
-
 }
 ```
 
@@ -62,14 +59,25 @@ http {
     port 10010;
 
     # http模块本身支持Route
-    # 设定Kafka推送接口 HTTP Request Path前缀
-    kafka '^/publish/(?<topic>.*?)(/(?<key>.*))?$' {
+    # 设定Kafka推送接口 HTTP Request Path
+    # 可以在Path的正则表达式中设定named substring
+    # 其中topic为指定推送的topic，key为指定推送的key，优先级最高
+    kafka '^/publish(/(?<topic>.*?)(/(?<key>.*))?)?$' {
 
         # 指定Kafka broker
         config bootstrap.servers 127.0.0.1:9092;
         # 指定Kafka Producer所在的group id
         config group.id temp-group;
 
+        # 指定Request Header Parameters中哪个参数的值为topic，优先级次于Path中指定的topic
+        topic_param 'Kafka-Topic';
+        # 指定Request Header Parameters中哪个参数的值为key, 优先级仅次于Path中指定的key
+        key_param 'Kafka-Key';
+
+        # 指定默认topic，优先级最低
+        default_topic 'test_topic';
+        # 指定默认key，优先级最低
+        default_key 'test_key';
     }
 }
 ```
