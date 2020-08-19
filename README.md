@@ -4,7 +4,14 @@ Folksong是一个基于libuv实现的模块化I/O处理服务，是一种以Side
 Folksong允许向应用无侵入地添加多种I/O功能，避免了为了使用第三方组件而向应用添加额外代码，使应用代码更专注于业务逻辑的实现。
 
 本项目现阶段主要针对Kafka的消息代理，在编译时需要依赖多个第三方类库。使用包括`libuv`中的I/O事件驱动框架，使用`librdkafka`实现对Kafka消息的收发操作，
-使用`nodejs/http-parser`实现对HTTP Request的解析。
+使用`nodejs/http-parser`实现对HTTP Request的解析，使用`libpcre`实现正则表达式的相关功能。
+
+## Folksong 依赖第三方类库
+
+* `libuv`
+* `librdkafka`
+* `nodejs/http-parser`
+* `libpcre`
 
 ## Kafka 消费者代理
 
