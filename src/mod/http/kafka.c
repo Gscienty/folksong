@@ -13,6 +13,7 @@
 #include <librdkafka/rdkafka.h>
 #include <malloc.h>
 #include <stddef.h>
+#include <pcre.h>
 
 typedef struct fs_mod_http_kafka_conf_item_s fs_mod_http_kafka_conf_item_t;
 struct fs_mod_http_kafka_conf_item_s {
@@ -22,7 +23,8 @@ struct fs_mod_http_kafka_conf_item_s {
 
 typedef struct fs_mod_http_kafka_publisher_s fs_mod_http_kafka_publisher_t;
 struct fs_mod_http_kafka_publisher_s {
-    fs_str_t            prefix;
+    fs_str_t            path;
+    pcre                *path_re;
 
     fs_arr_t            *conf;
 
@@ -57,6 +59,8 @@ fs_mod(1, fs_mod_http_kafka, &method,
        fs_param_cmd     (fs_str("config"),  fs_mod_http_kafka_cmd_config));
 
 static int fs_mod_http_kafka_block(fs_run_t *run, void *ctx) {
+    const char *errstr = NULL;
+    int erroff = 0;
     fs_mod_http_kafka_publisher_t *publisher;
     if (fs_run_st_subtop_mod(run) != &fs_mod_http) {
         return FS_CONF_PASS;
@@ -77,9 +81,20 @@ static int fs_mod_http_kafka_block(fs_run_t *run, void *ctx) {
     route->release_cb   = fs_mod_http_kafka_release_cb;
 
     publisher           = route->conf;
-    publisher->prefix   = *fs_arr_nth(fs_str_t, fs_run_tokens(run), 1);
     publisher->conf     = fs_alloc_arr(http->pool, 2, sizeof(fs_mod_http_kafka_conf_item_t));
     publisher->log      = http->log;
+
+    publisher->path     = *fs_arr_nth(fs_str_t, fs_run_tokens(run), 1);
+    publisher->path_re  = pcre_compile(fs_str_get(&publisher->path), PCRE_CASELESS, &errstr, &erroff, NULL);
+    if (publisher->path_re == NULL) {
+        if ((size_t) erroff == fs_str_size(&publisher->path)) {
+            fs_log_err(run->log, "fs_mod_http_kafka: pcre_compile() failed: %s in %s", errstr, fs_str_get(&publisher->path));
+        }
+        else {
+            fs_log_err(run->log, "fs_mod_http_kafka: pcre_compile() failed: %s in %s at %s",
+                       errstr, fs_str_get(&publisher->path), fs_str_get(&publisher->path) + erroff);
+        }
+    }
 
     return FS_CONF_OK;
 }
@@ -111,11 +126,13 @@ static int fs_mod_http_kafka_cmd_config(fs_run_t *run, void *ctx) {
 static bool fs_mod_http_kafka_match_cb(void *conf, fs_mod_http_req_t *req) {
     fs_mod_http_kafka_publisher_t *publisher = conf;
 
-    if (fs_str_size(&publisher->prefix) - 1 > fs_str_size(&req->url)) {
+    if (publisher->path_re
+        && pcre_exec(publisher->path_re, NULL, fs_str_get(&req->url), fs_str_size(&req->url), 0, 0, NULL, 0) == PCRE_ERROR_NOMATCH) {
+
         return false;
     }
 
-    return fs_str_get(&req->url) == strstr(fs_str_get(&req->url), fs_str_get(&publisher->prefix));
+    return true;
 }
 
 static int fs_mod_http_kafka_init_cb(fs_mod_http_req_t *req) {
@@ -144,27 +161,42 @@ static int fs_mod_http_kafka_body_cb(fs_mod_http_req_t *req, const char *at, siz
 }
 
 static int fs_mod_http_kafka_done_cb(fs_mod_http_req_t *req) {
+    int n = 0;
+    int match_vector[128] = { 0 };
     fs_mod_http_kafka_publisher_t *publisher = req->route->conf;
     fs_mod_http_kafka_value_t *value = req->self;
 
-    char *topic = fs_str_get(&req->url) + fs_str_size(&publisher->prefix) - 1;
-    bool only_topic = true;
-    char *key = strchr(topic, '/');
-    rd_kafka_t *rk;
-    rd_kafka_conf_t *rkconf;
+    const char *topic = NULL;
+    const char *key = NULL;
+
+    pcre_extra ext = { .flags = 0 };
+    n = pcre_exec(publisher->path_re, &ext, fs_str_get(&req->url), fs_str_size(&req->url), 0, 0, match_vector, 128);
+    pcre_get_named_substring(publisher->path_re, fs_str_get(&req->url), match_vector, n, "topic", &topic);
+    if (topic == NULL) {
+        fs_mod_http_response((uv_stream_t *) &req->conn, req, 500, "Internal Server Error");
+
+        return FS_MOD_HTTP_ERROR;
+    }
+    if (strlen(topic) == 0) {
+        fs_mod_http_response((uv_stream_t *) &req->conn, req, 400, "Bad Request");
+
+        return FS_MOD_HTTP_OK;
+    }
+
+    pcre_get_named_substring(publisher->path_re, fs_str_get(&req->url), match_vector, n, "key", &key);
+
+    rd_kafka_t *rk = NULL;
+    rd_kafka_conf_t *rkconf = NULL;
+    rd_kafka_topic_t *rkt = NULL;
+    rd_kafka_topic_conf_t *rktconf = NULL;
     char errstr[256];
     int ret;
     int i;
 
-    if (key) {
-        only_topic = false;
-        *key++ = 0;
-    }
-
     if (value->buf.base == NULL) {
         fs_mod_http_response((uv_stream_t *) &req->conn, req, 400, "Bad Request");
 
-        return FS_MOD_HTTP_ERROR;
+        goto failed;
     }
 
     rkconf = rd_kafka_conf_new();
@@ -176,7 +208,7 @@ static int fs_mod_http_kafka_done_cb(fs_mod_http_req_t *req) {
             fs_log_err(req->log, "fs_mod_http_kafka: kafka_conf_set failed, %s", errstr);
             fs_mod_http_response((uv_stream_t *) &req->conn, req, 500, "Internal Server Error");
 
-            return FS_MOD_HTTP_ERROR;
+            goto failed;
         }
     }
 
@@ -185,33 +217,64 @@ static int fs_mod_http_kafka_done_cb(fs_mod_http_req_t *req) {
         fs_log_err(req->log, "fs_mod_http_kafka: rd_kafka_new failed, %s", errstr);
         fs_mod_http_response((uv_stream_t *) &req->conn, req, 500, "Internal Server Error");
 
-        return FS_MOD_HTTP_ERROR;
+        goto failed;
+    }
+    rktconf = rd_kafka_topic_conf_new();
+    if (!rktconf) {
+        fs_log_err(req->log, "fs_mod_http_kafka: rd_kafka_topic_conf_new failed, %d", 0);
+        fs_mod_http_response((uv_stream_t *) &req->conn, req, 500, "Internal Server Error");
+
+        goto failed;
+    }
+    rkt = rd_kafka_topic_new(rk, topic, rktconf);
+    if (!rkt) {
+        fs_log_err(req->log, "fs_mod_http_kafka: rd_kafka_topic_new failed, %d", 0);
+        fs_mod_http_response((uv_stream_t *) &req->conn, req, 500, "Internal Server Error");
+
+        goto failed;
     }
 
-    ret = rd_kafka_producev(rk,
-                            RD_KAFKA_V_TOPIC(topic),
-                            RD_KAFKA_V_MSGFLAGS(RD_KAFKA_MSG_F_COPY),
-                            RD_KAFKA_V_VALUE((char *) value->buf.base, value->buf.len),
-                            RD_KAFKA_V_OPAQUE(NULL),
-                            RD_KAFKA_V_END);
-
+    ret = rd_kafka_produce(rkt, RD_KAFKA_PARTITION_UA,  RD_KAFKA_MSG_F_COPY,
+                           value->buf.base, value->buf.len,
+                           key, key ? strlen(key) : 0,
+                           NULL);
     if (ret) {
         fs_log_err(req->log, "fs_mod_http_kafka: rd_kafka_producev failed, %s", rd_kafka_err2str(ret));
         fs_mod_http_response((uv_stream_t *) &req->conn, req, 500, "Internal Server Error");
 
-        return FS_MOD_HTTP_ERROR;
+        goto failed;
     }
 
     rd_kafka_poll(rk, 0);
     fs_log_dbg(req->log, "fs_mod_http_kafka: flushing messages, wait for max %dms", 10 * 1000);
     rd_kafka_flush(rk, 10 * 1000);
-
-    rd_kafka_destroy(rk);
-
     fs_log_info(req->log, "fs_mod_http_kafka: send message, topic: %s, key: %s", topic, key);
 
     fs_mod_http_response((uv_stream_t *) &req->conn, req, 200, "OK");
+
+    rd_kafka_destroy(rk);
+    rd_kafka_topic_destroy(rkt);
+
+    pcre_free_substring(topic);
+    if (key) {
+        pcre_free_substring(key);
+    }
     return FS_MOD_HTTP_OK;
+
+failed:
+    if (rk) {
+        rd_kafka_destroy(rk);
+    }
+    if (rkt) {
+        rd_kafka_topic_destroy(rkt);
+    }
+
+    pcre_free_substring(topic);
+    if (key) {
+        pcre_free_substring(key);
+    }
+
+    return FS_MOD_HTTP_ERROR;
 }
 
 static int fs_mod_http_kafka_release_cb(fs_mod_http_req_t *req) {

@@ -47,7 +47,7 @@ fs_mod(1, fs_mod_http_proxy, &method,
        
 
 static int fs_mod_http_proxy_block(fs_run_t *run, void *ctx) {
-    const char errstr[128] = { 0 };
+    const char *errstr = NULL;
     int erroff = 0;
     int n = 0;
     fs_mod_http_proxy_t *proxy;
@@ -76,9 +76,8 @@ static int fs_mod_http_proxy_block(fs_run_t *run, void *ctx) {
     proxy->path_captures    = 0;
     proxy->log              = http->log;
 
-    proxy->path             = *fs_arr_nth(fs_str_t, fs_run_tokens(run), 1);
-    proxy->path_re          = pcre_compile(fs_str_get(&proxy->path), PCRE_CASELESS, (const char **) errstr, &erroff, NULL);
-
+    proxy->path     = *fs_arr_nth(fs_str_t, fs_run_tokens(run), 1);
+    proxy->path_re  = pcre_compile(fs_str_get(&proxy->path), PCRE_CASELESS, &errstr, &erroff, NULL);
     if (proxy->path_re == NULL) {
         if ((size_t) erroff == fs_str_size(&proxy->path)) {
             fs_log_err(run->log, "fs_mod_http_proxy: pcre_compile() failed: %s in %s", errstr, fs_str_get(&proxy->path));
