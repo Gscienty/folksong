@@ -17,6 +17,10 @@
 #define FS_MOD_HTTP_ERROR   -1
 #define FS_MOD_HTTP_OK      0
 
+#define FS_MOD_HTTP_P_STATE_WANT_KEY    1
+#define FS_MOD_HTTP_P_STATE_IN_KEY      2
+#define FS_MOD_HTTP_P_STATE_IN_VALUE    3
+
 typedef struct fs_mod_http_s fs_mod_http_t;
 typedef struct fs_mod_http_route_s fs_mod_http_route_t;
 typedef struct fs_mod_http_req_s fs_mod_http_req_t;
@@ -61,8 +65,11 @@ struct fs_mod_http_req_s {
     size_t                  url_len;
     fs_str_t                url;
 
+    uv_buf_t                p_buf;
+    size_t                  p_len;
     fs_arr_t                *p_key;
     fs_arr_t                *p_val;
+    int                     p_state;
 
     void                    *self;
 

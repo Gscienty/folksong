@@ -53,8 +53,8 @@ static int fs_mod_http_kafka_done_cb(fs_mod_http_req_t *req);
 static int fs_mod_http_kafka_release_cb(fs_mod_http_req_t *req);
 
 fs_mod(1, fs_mod_http_kafka, &method,
-       fs_subblock_cmd  (fs_str("kafka"), fs_mod_http_kafka_block),
-       fs_param_cmd     (fs_str("config"), fs_mod_http_kafka_cmd_config));
+       fs_subblock_cmd  (fs_str("kafka"),   fs_mod_http_kafka_block),
+       fs_param_cmd     (fs_str("config"),  fs_mod_http_kafka_cmd_config));
 
 static int fs_mod_http_kafka_block(fs_run_t *run, void *ctx) {
     fs_mod_http_kafka_publisher_t *publisher;
@@ -66,8 +66,8 @@ static int fs_mod_http_kafka_block(fs_run_t *run, void *ctx) {
         return FS_CONF_ERROR;
     }
 
-    fs_mod_http_t *http = ctx;
-    fs_mod_http_route_t *route = fs_arr_push(http->routes);
+    fs_mod_http_t *http         = ctx;
+    fs_mod_http_route_t *route  = fs_arr_push(http->routes);
 
     route->conf         = fs_pool_alloc(run->pool, sizeof(fs_mod_http_kafka_publisher_t));
     route->match_cb     = fs_mod_http_kafka_match_cb;
@@ -75,6 +75,7 @@ static int fs_mod_http_kafka_block(fs_run_t *run, void *ctx) {
     route->body_cb      = fs_mod_http_kafka_body_cb;
     route->done_cb      = fs_mod_http_kafka_done_cb;
     route->release_cb   = fs_mod_http_kafka_release_cb;
+
     publisher           = route->conf;
     publisher->prefix   = *fs_arr_nth(fs_str_t, fs_run_tokens(run), 1);
     publisher->conf     = fs_alloc_arr(http->pool, 2, sizeof(fs_mod_http_kafka_conf_item_t));

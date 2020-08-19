@@ -170,6 +170,12 @@ static void fs_mod_http_connection_cb(uv_stream_t *stream, int status) {
     req->url_buf.base       = NULL;
     req->url_buf.len        = 0;
     req->url_len            = 0;
+    req->p_buf.base         = NULL;
+    req->p_buf.len          = 0;
+    req->p_len              = 0;
+    req->p_key              = fs_alloc_arr(http->pool, 4, sizeof(fs_str_t));
+    req->p_val              = fs_alloc_arr(http->pool, 4, sizeof(fs_str_t));
+    req->p_state            = FS_MOD_HTTP_P_STATE_WANT_KEY;
 
     req->settings.on_url                = fs_mod_http_on_url;
     req->settings.on_header_field       = fs_mod_http_on_header_field;
@@ -239,17 +245,53 @@ static int fs_mod_http_on_url(http_parser *parser, const char *at, size_t length
 }
 
 static int fs_mod_http_on_header_field(http_parser *parser, const char *at, size_t length) {
-    (void) parser;
-    (void) at;
-    (void) length;
+    fs_mod_http_req_t *req = fs_mod_http_req_parser_reflect(parser);
+    fs_str_t *field = NULL;
+    uv_buf_t buf = { NULL, 0 };
+    size_t len = 0;
+
+    if (req->p_state == FS_MOD_HTTP_P_STATE_WANT_KEY || req->p_state == FS_MOD_HTTP_P_STATE_IN_VALUE) {
+        field = fs_arr_push(req->p_key);
+        fs_str_from_uv(field, &buf, 0);
+    }
+    else {
+        field       = fs_arr_last(fs_str_t, req->p_key);
+        buf.base    = field->buf.buf;
+        buf.len     = field->buf.buf_len;
+    }
+    len = fs_str_size(field);
+    fs_mod_http_buf_append(&buf, &len, at, length);
+
+    fs_str_from_uv(field, &buf, len);
+    field->buf.buf_len = buf.len;
+
+    req->p_state = FS_MOD_HTTP_P_STATE_IN_KEY;
 
     return 0;
 }
 
 static int fs_mod_http_on_header_value(http_parser *parser, const char *at, size_t length) {
-    (void) parser;
-    (void) at;
-    (void) length;
+    fs_mod_http_req_t *req = fs_mod_http_req_parser_reflect(parser);
+    fs_str_t *value = NULL;
+    uv_buf_t buf = { NULL, 0 };
+    size_t len = 0;
+
+    if (req->p_state == FS_MOD_HTTP_P_STATE_IN_KEY) {
+        value = fs_arr_push(req->p_val);
+        fs_str_from_uv(value, &buf, 0);
+    }
+    else {
+        value       = fs_arr_last(fs_str_t, req->p_val);
+        buf.base    = value->buf.buf;
+        buf.len     = value->buf.buf_len;
+    }
+    len = fs_str_size(value);
+    fs_mod_http_buf_append(&buf, &len, at, length);
+
+    fs_str_from_uv(value, &buf, len);
+    value->buf.buf_len = buf.len;
+
+    req->p_state = FS_MOD_HTTP_P_STATE_IN_VALUE;
 
     return 0;
 }
@@ -313,6 +355,7 @@ static void fs_mod_http_buf_append(uv_buf_t *buf, size_t *nlen, const char *at, 
 }
 
 static void fs_mod_http_req_release(uv_handle_t *handle) {
+    int i;
     fs_mod_http_req_t *req = fs_mod_http_req_conn_reflect(handle);
 
     fs_log_dbg(req->log, "fs_mod_http: release req, %d", 0);
@@ -326,6 +369,18 @@ static void fs_mod_http_req_release(uv_handle_t *handle) {
     if (req->route && req->route->release_cb) {
         req->route->release_cb(req);
     }
+
+    for (i = 0; i < fs_arr_count(req->p_key); i++) {
+        free(fs_str_get(fs_arr_nth(fs_str_t, req->p_key, i)));
+    }
+    free(req->p_key->elems);
+    free(req->p_key);
+
+    for (i = 0; i < fs_arr_count(req->p_val); i++) {
+        free(fs_str_get(fs_arr_nth(fs_str_t, req->p_val, i)));
+    }
+    free(req->p_val->elems);
+    free(req->p_val);
 
     fs_pool_release(req->pool, req);
 }
