@@ -10,10 +10,18 @@
 #include "fs_conf.h"
 #include "fs_arr.h"
 #include "fs_mod_http.h"
+#include "fs_util.h"
 #include <librdkafka/rdkafka.h>
 #include <malloc.h>
 #include <stddef.h>
 #include <pcre.h>
+
+#define FS_MOD_HTTP_KAFKA_OK    0
+#define FS_MOD_HTTP_KAFKA_ERROR -1
+
+#define FS_MOD_HTTP_KAFKA_VALUE_IN_PCRE     0
+#define FS_MOD_HTTP_KAFKA_VALUE_IN_PARAM    1
+#define FS_MOD_HTTP_KAFKA_VALUE_IN_DEFAULT  2
 
 typedef struct fs_mod_http_kafka_conf_item_s fs_mod_http_kafka_conf_item_t;
 struct fs_mod_http_kafka_conf_item_s {
@@ -25,6 +33,12 @@ typedef struct fs_mod_http_kafka_publisher_s fs_mod_http_kafka_publisher_t;
 struct fs_mod_http_kafka_publisher_s {
     fs_str_t            path;
     pcre                *path_re;
+
+    fs_str_t            topic_param;
+    fs_str_t            default_topic;
+
+    fs_str_t            key_param;
+    fs_str_t            default_key;
 
     fs_arr_t            *conf;
 
@@ -47,6 +61,10 @@ static fs_mod_method_t method = {
 
 static int fs_mod_http_kafka_block(fs_run_t *run, void *ctx);
 static int fs_mod_http_kafka_cmd_config(fs_run_t *run, void *ctx);
+static int fs_mod_http_kafka_cmd_topic_param(fs_run_t *run, void *ctx);
+static int fs_mod_http_kafka_cmd_default_topic(fs_run_t *run, void *ctx);
+static int fs_mod_http_kafka_cmd_key_param(fs_run_t *run, void *ctx);
+static int fs_mod_http_kafka_cmd_default_key(fs_run_t *run, void *ctx);
 
 static bool fs_mod_http_kafka_match_cb(void *conf, fs_mod_http_req_t *req);
 static int fs_mod_http_kafka_init_cb(fs_mod_http_req_t *req);
@@ -54,9 +72,17 @@ static int fs_mod_http_kafka_body_cb(fs_mod_http_req_t *req, const char *at, siz
 static int fs_mod_http_kafka_done_cb(fs_mod_http_req_t *req);
 static int fs_mod_http_kafka_release_cb(fs_mod_http_req_t *req);
 
+static int fs_mod_http_kafka_get_topic(int *in, const char **topic, fs_mod_http_req_t *req);
+static int fs_mod_http_kafka_get_key(int *in, const char **key, fs_mod_http_req_t *req);
+static int fs_mod_http_kafka_publish(fs_mod_http_req_t *req, const char *topic, const char *key);
+
 fs_mod(1, fs_mod_http_kafka, &method,
-       fs_subblock_cmd  (fs_str("kafka"),   fs_mod_http_kafka_block),
-       fs_param_cmd     (fs_str("config"),  fs_mod_http_kafka_cmd_config));
+       fs_subblock_cmd  (fs_str("kafka"),           fs_mod_http_kafka_block),
+       fs_param_cmd     (fs_str("config"),          fs_mod_http_kafka_cmd_config),
+       fs_param_cmd     (fs_str("topic_param"),     fs_mod_http_kafka_cmd_topic_param),
+       fs_param_cmd     (fs_str("default_topic"),   fs_mod_http_kafka_cmd_default_topic),
+       fs_param_cmd     (fs_str("key_param"),       fs_mod_http_kafka_cmd_key_param),
+       fs_param_cmd     (fs_str("default_key"),     fs_mod_http_kafka_cmd_default_key));
 
 static int fs_mod_http_kafka_block(fs_run_t *run, void *ctx) {
     const char *errstr = NULL;
@@ -96,6 +122,9 @@ static int fs_mod_http_kafka_block(fs_run_t *run, void *ctx) {
         }
     }
 
+    publisher->topic_param.buf.buf      = NULL;
+    publisher->default_topic.buf.buf    = NULL;
+
     return FS_CONF_OK;
 }
 
@@ -119,6 +148,94 @@ static int fs_mod_http_kafka_cmd_config(fs_run_t *run, void *ctx) {
     fs_log_dbg(listener->log, "fs_mod_http_kafka: set config: %s - %s", 
                fs_str_get(fs_arr_nth(fs_str_t, fs_run_tokens(run), 1)),
                fs_str_get(fs_arr_nth(fs_str_t, fs_run_tokens(run), 2)));
+
+    return FS_CONF_OK;
+}
+
+static int fs_mod_http_kafka_cmd_topic_param(fs_run_t *run, void *ctx) {
+    if (!fs_cmd_equal(fs_run_st_top_cmd(run), fs_mod_http_kafka_block)) {
+        return FS_CONF_PASS;
+    }
+
+    if (fs_run_tokens(run)->ele_count != 2) {
+        return FS_CONF_ERROR;
+    }
+
+    fs_mod_http_t *http                         = ctx;
+    fs_mod_http_route_t *route                  = fs_arr_last(fs_mod_http_route_t, http->routes);
+    fs_mod_http_kafka_publisher_t *publisher    = route->conf;
+
+    if (publisher->topic_param.buf.buf != NULL) {
+        return FS_CONF_ERROR;
+    }
+
+    publisher->topic_param = *fs_arr_nth(fs_str_t, fs_run_tokens(run), 1);
+
+    return FS_CONF_OK;
+}
+
+static int fs_mod_http_kafka_cmd_default_topic(fs_run_t *run, void *ctx) {
+    if (!fs_cmd_equal(fs_run_st_top_cmd(run), fs_mod_http_kafka_block)) {
+        return FS_CONF_PASS;
+    }
+
+    if (fs_run_tokens(run)->ele_count != 2) {
+        return FS_CONF_ERROR;
+    }
+
+    fs_mod_http_t *http                         = ctx;
+    fs_mod_http_route_t *route                  = fs_arr_last(fs_mod_http_route_t, http->routes);
+    fs_mod_http_kafka_publisher_t *publisher    = route->conf;
+
+    if (publisher->default_topic.buf.buf != NULL) {
+        return FS_CONF_ERROR;
+    }
+
+    publisher->default_topic = *fs_arr_nth(fs_str_t, fs_run_tokens(run), 1);
+
+    return FS_CONF_OK;
+}
+
+static int fs_mod_http_kafka_cmd_key_param(fs_run_t *run, void *ctx) {
+    if (!fs_cmd_equal(fs_run_st_top_cmd(run), fs_mod_http_kafka_block)) {
+        return FS_CONF_PASS;
+    }
+
+    if (fs_run_tokens(run)->ele_count != 2) {
+        return FS_CONF_ERROR;
+    }
+
+    fs_mod_http_t *http                         = ctx;
+    fs_mod_http_route_t *route                  = fs_arr_last(fs_mod_http_route_t, http->routes);
+    fs_mod_http_kafka_publisher_t *publisher    = route->conf;
+
+    if (publisher->key_param.buf.buf != NULL) {
+        return FS_CONF_ERROR;
+    }
+
+    publisher->key_param = *fs_arr_nth(fs_str_t, fs_run_tokens(run), 1);
+
+    return FS_CONF_OK;
+}
+
+static int fs_mod_http_kafka_cmd_default_key(fs_run_t *run, void *ctx) {
+    if (!fs_cmd_equal(fs_run_st_top_cmd(run), fs_mod_http_kafka_block)) {
+        return FS_CONF_PASS;
+    }
+
+    if (fs_run_tokens(run)->ele_count != 2) {
+        return FS_CONF_ERROR;
+    }
+
+    fs_mod_http_t *http                         = ctx;
+    fs_mod_http_route_t *route                  = fs_arr_last(fs_mod_http_route_t, http->routes);
+    fs_mod_http_kafka_publisher_t *publisher    = route->conf;
+
+    if (publisher->default_key.buf.buf != NULL) {
+        return FS_CONF_ERROR;
+    }
+
+    publisher->default_key = *fs_arr_nth(fs_str_t, fs_run_tokens(run), 1);
 
     return FS_CONF_OK;
 }
@@ -161,30 +278,142 @@ static int fs_mod_http_kafka_body_cb(fs_mod_http_req_t *req, const char *at, siz
 }
 
 static int fs_mod_http_kafka_done_cb(fs_mod_http_req_t *req) {
-    int n = 0;
-    int match_vector[128] = { 0 };
-    fs_mod_http_kafka_publisher_t *publisher = req->route->conf;
-    fs_mod_http_kafka_value_t *value = req->self;
-
+    int ret;
+    int topic_in = 0;
+    int key_in = 0;
     const char *topic = NULL;
     const char *key = NULL;
 
-    pcre_extra ext = { .flags = 0 };
-    n = pcre_exec(publisher->path_re, &ext, fs_str_get(&req->url), fs_str_size(&req->url), 0, 0, match_vector, 128);
-    pcre_get_named_substring(publisher->path_re, fs_str_get(&req->url), match_vector, n, "topic", &topic);
-    if (topic == NULL) {
-        fs_mod_http_response((uv_stream_t *) &req->conn, req, 500, "Internal Server Error");
-
+    if (fs_mod_http_kafka_get_topic(&topic_in, &topic, req) != FS_MOD_HTTP_KAFKA_OK) {
         return FS_MOD_HTTP_ERROR;
     }
-    if (strlen(topic) == 0) {
-        fs_mod_http_response((uv_stream_t *) &req->conn, req, 400, "Bad Request");
+    fs_mod_http_kafka_get_key(&key_in, &key, req);
 
-        return FS_MOD_HTTP_OK;
+    ret = fs_mod_http_kafka_publish(req, topic, key);
+
+    if (topic_in == FS_MOD_HTTP_KAFKA_VALUE_IN_PCRE) {
+        pcre_free_substring(topic);
+    }
+    if (key && key_in == FS_MOD_HTTP_KAFKA_VALUE_IN_PCRE) {
+        pcre_free_substring(key);
+    }
+    return ret;
+}
+
+static int fs_mod_http_kafka_release_cb(fs_mod_http_req_t *req) {
+    fs_mod_http_kafka_value_t *value = req->self;
+
+    if (value->buf.base) {
+        free(value->buf.base);
     }
 
-    pcre_get_named_substring(publisher->path_re, fs_str_get(&req->url), match_vector, n, "key", &key);
+    free(value);
 
+    return 0;
+}
+
+static int fs_mod_http_kafka_get_topic(int *in, const char **topic, fs_mod_http_req_t *req) {
+    bool param_finded = false;
+    int n = 0;
+    int match_vector[128] = { 0 };
+    fs_mod_http_kafka_publisher_t *publisher = req->route->conf;
+    pcre_extra ext = { .flags = 0 };
+
+    n = pcre_exec(publisher->path_re, &ext, fs_str_get(&req->url), fs_str_size(&req->url), 0, 0, match_vector, 128);
+    pcre_get_named_substring(publisher->path_re, fs_str_get(&req->url), match_vector, n, "topic", topic);
+    if (*topic == NULL || strlen(*topic) == 0) {
+        goto try_param;
+    }
+    *in = FS_MOD_HTTP_KAFKA_VALUE_IN_PCRE;
+    return FS_MOD_HTTP_KAFKA_OK;
+
+try_param:
+    if (publisher->topic_param.buf.buf == NULL) {
+        goto try_default;
+    }
+    for (n = 0; n < fs_arr_count(req->p_key); n++) {
+        if (fs_str_size(fs_arr_nth(fs_str_t, req->p_key, n)) != fs_str_size(&publisher->topic_param) - 1) {
+            continue;
+        }
+        if (fs_str_cmp(fs_arr_nth(fs_str_t, req->p_key, n), &publisher->topic_param) == 0) {
+            param_finded = true;
+            break;
+        }
+    }
+    if (!param_finded) {
+        goto try_default;
+    }
+
+    *topic = fs_str_get(fs_arr_nth(fs_str_t, req->p_val, n));
+    *in = FS_MOD_HTTP_KAFKA_VALUE_IN_PARAM;
+    return FS_MOD_HTTP_KAFKA_OK;
+
+try_default:
+    if (publisher->default_topic.buf.buf == NULL) {
+        goto failed;
+    }
+
+    *topic = fs_str_get(&publisher->default_topic);
+    *in = FS_MOD_HTTP_KAFKA_VALUE_IN_DEFAULT;
+    return FS_MOD_HTTP_KAFKA_OK;
+
+failed:
+    fs_mod_http_response((uv_stream_t *) &req->conn, req, 400, "Bad Request");
+    return FS_MOD_HTTP_KAFKA_ERROR;
+}
+
+static int fs_mod_http_kafka_get_key(int *in, const char **key, fs_mod_http_req_t *req) {
+    bool param_finded = false;
+    int n = 0;
+    int match_vector[128] = { 0 };
+    fs_mod_http_kafka_publisher_t *publisher = req->route->conf;
+    pcre_extra ext = { .flags = 0 };
+
+    n = pcre_exec(publisher->path_re, &ext, fs_str_get(&req->url), fs_str_size(&req->url), 0, 0, match_vector, 128);
+    pcre_get_named_substring(publisher->path_re, fs_str_get(&req->url), match_vector, n, "key", key);
+    if (*key == NULL || strlen(*key) == 0) {
+        goto try_param;
+    }
+    *in = FS_MOD_HTTP_KAFKA_VALUE_IN_PCRE;
+    return FS_MOD_HTTP_KAFKA_OK;
+
+try_param:
+    if (publisher->key_param.buf.buf == NULL) {
+        goto try_default;
+    }
+    for (n = 0; n < fs_arr_count(req->p_key); n++) {
+        if (fs_str_size(fs_arr_nth(fs_str_t, req->p_key, n)) != fs_str_size(&publisher->key_param) - 1) {
+            continue;
+        }
+        if (fs_str_cmp(fs_arr_nth(fs_str_t, req->p_key, n), &publisher->key_param) == 0) {
+            param_finded = true;
+            break;
+        }
+    }
+    if (!param_finded) {
+        goto try_default;
+    }
+
+    *key = fs_str_get(fs_arr_nth(fs_str_t, req->p_val, n));
+    *in = FS_MOD_HTTP_KAFKA_VALUE_IN_PARAM;
+    return FS_MOD_HTTP_KAFKA_OK;
+
+try_default:
+    if (publisher->default_key.buf.buf == NULL) {
+        goto failed;
+    }
+
+    *key = fs_str_get(&publisher->default_key);
+    *in = FS_MOD_HTTP_KAFKA_VALUE_IN_DEFAULT;
+    return FS_MOD_HTTP_KAFKA_OK;
+
+failed:
+    return FS_MOD_HTTP_KAFKA_ERROR;
+}
+
+static int fs_mod_http_kafka_publish(fs_mod_http_req_t *req, const char *topic, const char *key) {
+    fs_mod_http_kafka_publisher_t *publisher = req->route->conf;
+    fs_mod_http_kafka_value_t *value = req->self;
     rd_kafka_t *rk = NULL;
     rd_kafka_conf_t *rkconf = NULL;
     rd_kafka_topic_t *rkt = NULL;
@@ -255,10 +484,6 @@ static int fs_mod_http_kafka_done_cb(fs_mod_http_req_t *req) {
     rd_kafka_destroy(rk);
     rd_kafka_topic_destroy(rkt);
 
-    pcre_free_substring(topic);
-    if (key) {
-        pcre_free_substring(key);
-    }
     return FS_MOD_HTTP_OK;
 
 failed:
@@ -269,22 +494,5 @@ failed:
         rd_kafka_topic_destroy(rkt);
     }
 
-    pcre_free_substring(topic);
-    if (key) {
-        pcre_free_substring(key);
-    }
-
     return FS_MOD_HTTP_ERROR;
-}
-
-static int fs_mod_http_kafka_release_cb(fs_mod_http_req_t *req) {
-    fs_mod_http_kafka_value_t *value = req->self;
-
-    if (value->buf.base) {
-        free(value->buf.base);
-    }
-
-    free(value);
-
-    return 0;
 }
