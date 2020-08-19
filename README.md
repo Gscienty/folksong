@@ -61,9 +61,9 @@ http {
     host 127.0.0.1;
     port 10010;
 
-    # http模块本身支持Route（现阶段较弱）
+    # http模块本身支持Route
     # 设定Kafka推送接口 HTTP Request Path前缀
-    kafka /publish/ {
+    kafka '^/publish/(?<topic>.*?)(/(?<key>.*))?$' {
 
         # 指定Kafka broker
         config bootstrap.servers 127.0.0.1:9092;
