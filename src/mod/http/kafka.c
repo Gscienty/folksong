@@ -92,7 +92,7 @@ static int fs_mod_http_kafka_block(fs_run_t *run, void *ctx) {
         return FS_CONF_PASS;
     }
 
-    if (fs_run_tokens(run)->ele_count != 2) {
+    if (fs_arr_count(fs_run_tokens(run)) != 2) {
         return FS_CONF_ERROR;
     }
 
@@ -133,7 +133,7 @@ static int fs_mod_http_kafka_cmd_config(fs_run_t *run, void *ctx) {
         return FS_CONF_PASS;
     }
 
-    if (fs_run_tokens(run)->ele_count != 3) {
+    if (fs_arr_count(fs_run_tokens(run)) != 3) {
         return FS_CONF_ERROR;
     }
 
@@ -157,7 +157,7 @@ static int fs_mod_http_kafka_cmd_topic_param(fs_run_t *run, void *ctx) {
         return FS_CONF_PASS;
     }
 
-    if (fs_run_tokens(run)->ele_count != 2) {
+    if (fs_arr_count(fs_run_tokens(run)) != 2) {
         return FS_CONF_ERROR;
     }
 
@@ -179,7 +179,7 @@ static int fs_mod_http_kafka_cmd_default_topic(fs_run_t *run, void *ctx) {
         return FS_CONF_PASS;
     }
 
-    if (fs_run_tokens(run)->ele_count != 2) {
+    if (fs_arr_count(fs_run_tokens(run)) != 2) {
         return FS_CONF_ERROR;
     }
 
@@ -201,7 +201,7 @@ static int fs_mod_http_kafka_cmd_key_param(fs_run_t *run, void *ctx) {
         return FS_CONF_PASS;
     }
 
-    if (fs_run_tokens(run)->ele_count != 2) {
+    if (fs_arr_count(fs_run_tokens(run)) != 2) {
         return FS_CONF_ERROR;
     }
 
@@ -223,7 +223,7 @@ static int fs_mod_http_kafka_cmd_default_key(fs_run_t *run, void *ctx) {
         return FS_CONF_PASS;
     }
 
-    if (fs_run_tokens(run)->ele_count != 2) {
+    if (fs_arr_count(fs_run_tokens(run)) != 2) {
         return FS_CONF_ERROR;
     }
 
@@ -430,7 +430,7 @@ static int fs_mod_http_kafka_publish(fs_mod_http_req_t *req, const char *topic, 
 
     rkconf = rd_kafka_conf_new();
 
-    for (i = 0; i < publisher->conf->ele_count; i++) {
+    for (i = 0; i < fs_arr_count(publisher->conf); i++) {
         fs_mod_http_kafka_conf_item_t *item = fs_arr_nth(fs_mod_http_kafka_conf_item_t, publisher->conf, i);
 
         if (rd_kafka_conf_set(rkconf, item->key, item->value, errstr, sizeof(errstr)) != RD_KAFKA_CONF_OK) {
